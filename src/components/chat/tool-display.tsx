@@ -1,0 +1,102 @@
+'use client';
+
+import JsonView from '@uiw/react-json-view';
+import { ChevronsUpDown } from 'lucide-react';
+import { useState } from 'react';
+
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import type { ToolCallMessage } from '@/types/chat';
+
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+
+interface ToolDisplayProps {
+  message: ToolCallMessage;
+}
+
+interface JsonDisplayProps {
+  data: unknown;
+}
+
+function JsonDisplay({ data }: JsonDisplayProps) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <JsonView
+        value={data as object}
+        collapsed={1}
+        displayDataTypes={false}
+        enableClipboard={false}
+        shortenTextAfterLength={100}
+      />
+    </div>
+  );
+}
+
+/**
+ * Tool display component for rendering tool calls, arguments, and results
+ */
+export function ToolDisplay({ message }: ToolDisplayProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const hasContent = message.args || message.result;
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mb-2">
+      <div className="flex gap-1">
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8">
+            <ChevronsUpDown />
+            <span className="sr-only">Toggle</span>
+          </Button>
+        </CollapsibleTrigger>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs">
+            {message.name}
+          </Badge>
+          {/* Status indicator */}
+          {message.status === 'start' || message.status === 'toolCalling' ? (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-pulse" />
+              {message.status === 'start' ? 'starting' : 'processing'}
+            </div>
+          ) : message.status === 'complete' ? (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full" />
+              completed
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full" />
+              error
+            </div>
+          )}
+        </div>
+      </div>
+      {hasContent && (
+        <CollapsibleContent className="border border-border rounded-lg p-4 mt-1">
+          <div className="flex flex-col gap-2">
+            {/* Tool Arguments */}
+            {message.args && (
+              <div>
+                <h5 className="text-xs mb-2">Tool Arguments</h5>
+                <JsonDisplay data={message.args} />
+              </div>
+            )}
+
+            {/* Tool Result */}
+            {message.result && (
+              <div>
+                <h5 className="text-xs mb-2">Tool Result</h5>
+                <JsonDisplay data={message.result} />
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  );
+}

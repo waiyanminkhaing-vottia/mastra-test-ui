@@ -1,29 +1,30 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
+import { ThemeToggle } from '@/components/theme-toggle';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useChatStore } from '@/store/chat-store';
+import type { BotMessage, ToolCallMessage, UserMessage } from '@/types/chat';
 
+import { StreamingIndicator } from '../ui/streaming-indicator';
 import { ChatInput } from './chat-input';
 import { ChatMessage } from './chat-message';
-
-interface Message {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant' | 'system';
-  timestamp: Date;
-  avatar?: string;
-  name?: string;
-}
 
 /**
  * Main chat interface component that manages the conversation flow.
  */
 export function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const {
+    messages,
+    isLoading,
+    isMainStreaming,
+    sendMessage,
+    stopGeneration,
+    initializeSession,
+  } = useChatStore();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -40,27 +41,10 @@ export function ChatInterface() {
     }
   };
 
-  /**
-   * Handles sending a new message.
-   * @param content - The message content
-   */
-  const handleSendMessage = (content: string) => {
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      content,
-      role: 'user',
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-  };
-
-  /**
-   * Handles stopping message generation.
-   */
-  const handleStop = () => {
-    setIsLoading(false);
-  };
+  // Initialize session on component mount
+  useEffect(() => {
+    initializeSession();
+  }, [initializeSession]);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -70,9 +54,14 @@ export function ChatInterface() {
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen bg-background">
+        {/* Header with theme toggle */}
+        <div className="flex justify-end p-4 border-b border-border">
+          <ThemeToggle />
+        </div>
+
         {/* Messages Area */}
         <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="max-w-4xl mx-auto py-4">
+          <div className="max-w-2xl mx-auto mt-16 pb-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center min-h-[60vh] text-muted-foreground">
                 <div className="text-center space-y-5">
@@ -91,19 +80,23 @@ export function ChatInterface() {
               messages.map(message => (
                 <ChatMessage
                   key={message.id}
-                  message={message}
-                  isStreaming={isLoading && message.content === ''}
+                  message={
+                    message as UserMessage | BotMessage | ToolCallMessage
+                  }
                 />
               ))
             )}
+
+            {/* Show main streaming indicator when isMainStreaming is true */}
+            {isMainStreaming && <StreamingIndicator />}
           </div>
         </ScrollArea>
 
         {/* Chat Input */}
         <ChatInput
-          onSendMessage={handleSendMessage}
+          onSendMessage={sendMessage}
           isLoading={isLoading}
-          onStop={handleStop}
+          onStop={stopGeneration}
           placeholder="Ask Mastra AI anything..."
         />
       </div>
