@@ -26,19 +26,37 @@ export function ChatInterface() {
     initializeSession,
   } = useChatStore();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   /**
    * Scrolls to the bottom of the chat area.
    */
   const scrollToBottom = () => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'end',
+      });
+    }
+  };
+
+  /**
+   * Checks if the user is at or near the bottom of the scroll area.
+   */
+  const isAtBottom = (): boolean => {
     if (scrollAreaRef.current) {
       const scrollElement = scrollAreaRef.current.querySelector(
         '[data-radix-scroll-area-viewport]'
       );
       if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
+        const threshold = 100; // pixels from bottom
+        return (
+          scrollElement.scrollTop + scrollElement.clientHeight + threshold >=
+          scrollElement.scrollHeight
+        );
       }
     }
+    return false;
   };
 
   // Initialize session on component mount
@@ -46,22 +64,24 @@ export function ChatInterface() {
     initializeSession();
   }, [initializeSession]);
 
-  // Auto-scroll to bottom when new messages are added
+  // Auto-scroll to bottom when new messages are added, but only if user is at bottom
   useEffect(() => {
-    scrollToBottom();
+    if (isAtBottom()) {
+      scrollToBottom();
+    }
   }, [messages]);
 
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen bg-background">
-        {/* Header with theme toggle */}
-        <div className="flex justify-end p-4 border-b border-border">
+        {/* Fixed theme toggle */}
+        <div className="fixed top-4 right-4 z-50">
           <ThemeToggle />
         </div>
 
         {/* Messages Area */}
         <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="max-w-2xl mx-auto mt-16 pb-4">
+          <div className="max-w-2xl mx-auto mt-16 pb-32">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center min-h-[60vh] text-muted-foreground">
                 <div className="text-center space-y-5">
@@ -90,15 +110,26 @@ export function ChatInterface() {
             {/* Show main streaming indicator when isMainStreaming is true */}
             {isMainStreaming && <StreamingIndicator />}
           </div>
+
+          {/* Invisible bottom anchor for scrolling - placed after padding */}
+          <div ref={bottomRef} className="h-1" />
         </ScrollArea>
 
-        {/* Chat Input */}
-        <ChatInput
-          onSendMessage={sendMessage}
-          isLoading={isLoading}
-          onStop={stopGeneration}
-          placeholder="Ask Mastra AI anything..."
-        />
+        {/* Fixed Chat Input */}
+        <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border p-4 z-40">
+          <div className="max-w-2xl mx-auto">
+            <ChatInput
+              onSendMessage={(content: string) => {
+                sendMessage(content);
+                // Scroll to bottom immediately when user sends a message
+                setTimeout(scrollToBottom, 100);
+              }}
+              isLoading={isLoading}
+              onStop={stopGeneration}
+              placeholder="Ask Mastra AI anything..."
+            />
+          </div>
+        </div>
       </div>
     </TooltipProvider>
   );

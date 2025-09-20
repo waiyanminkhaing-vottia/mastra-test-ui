@@ -13,6 +13,7 @@ import type { ToolCallMessage } from '@/types/chat';
 
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Skeleton } from '../ui/skeleton';
 
 interface ToolDisplayProps {
   message: ToolCallMessage;
@@ -54,25 +55,25 @@ export function ToolDisplay({ message }: ToolDisplayProps) {
           </Button>
         </CollapsibleTrigger>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
-            {message.name}
-          </Badge>
-          {/* Status indicator */}
           {message.status === 'start' || message.status === 'toolCalling' ? (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-pulse" />
-              {message.status === 'start' ? 'starting' : 'processing'}
-            </div>
+            <Skeleton className="px-2 py-0.5 rounded">
+              <span className="text-xs">{message.name}</span>
+            </Skeleton>
           ) : message.status === 'complete' ? (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full" />
-              completed
-            </div>
+            <Badge
+              variant="default"
+              className="text-xs bg-green-600 hover:bg-green-700 text-white"
+            >
+              {message.name}
+            </Badge>
+          ) : message.status === 'error' ? (
+            <Badge variant="destructive" className="text-xs">
+              {message.name}
+            </Badge>
           ) : (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full" />
-              error
-            </div>
+            <Badge variant="destructive" className="text-xs">
+              {message.name}
+            </Badge>
           )}
         </div>
       </div>

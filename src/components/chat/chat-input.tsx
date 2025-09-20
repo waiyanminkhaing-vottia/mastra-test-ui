@@ -56,8 +56,8 @@ export function ChatInput({
   };
 
   return (
-    <div className="border-t bg-background p-4">
-      <div className="flex items-end gap-2 max-w-2xl mx-auto">
+    <>
+      <div className="flex items-end gap-2">
         <div className="flex-1 relative">
           <Textarea
             value={message}
@@ -108,6 +108,6 @@ export function ChatInput({
       <div className="text-xs text-muted-foreground text-center mt-2 max-w-4xl mx-auto">
         Press Enter to send, Shift + Enter for new line
       </div>
-    </div>
+    </>
   );
 }

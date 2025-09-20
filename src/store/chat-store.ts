@@ -176,13 +176,19 @@ export const useChatStore = create<ChatStore>()(
 
                 case 'tool-result':
                   if (currentTextMessageId) {
+                    const result = streamChunk.payload.result as any;
+                    const hasError =
+                      result &&
+                      (result.code === 'TOOL_EXECUTION_FAILED' ||
+                        result.message?.includes('Error'));
+
                     set(state => ({
                       messages: state.messages.map(msg =>
                         msg.id === currentTextMessageId
                           ? {
                               ...msg,
                               result: streamChunk.payload.result,
-                              status: 'complete',
+                              status: hasError ? 'error' : 'complete',
                             }
                           : msg
                       ),
