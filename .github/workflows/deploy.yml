@@ -79,7 +79,15 @@ jobs:
 
           # Add host to known_hosts and test connection
           ssh-keyscan -H $LIGHTSAIL_HOST >> ~/.ssh/known_hosts
-          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no $LIGHTSAIL_USER@$LIGHTSAIL_HOST "echo 'SSH connection successful'"
+
+          # Test SSH connection
+          echo "Testing SSH connection..."
+          if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no $LIGHTSAIL_USER@$LIGHTSAIL_HOST "echo 'SSH connection successful'"; then
+            echo "✅ SSH connection established"
+          else
+            echo "❌ SSH connection failed"
+            exit 1
+          fi
 
       - name: Build and deploy Next.js container
         run: |
@@ -101,7 +109,13 @@ jobs:
           scp deploy_script.sh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }}:~/
 
           # Create a tar of the source code (excluding node_modules and build artifacts)
-          tar --exclude='node_modules' --exclude='.next' --exclude='.git' --exclude='tsconfig.tsbuildinfo' -czf source.tar.gz .
+          tar --exclude='node_modules' \
+              --exclude='.next' \
+              --exclude='.git' \
+              --exclude='tsconfig.tsbuildinfo' \
+              --exclude='source.tar.gz' \
+              --exclude='deploy_script.sh' \
+              -czf source.tar.gz . 2>/dev/null || tar --exclude='node_modules' --exclude='.next' --exclude='.git' -czf source.tar.gz .
           scp source.tar.gz ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }}:~/
 
           # Execute deployment on the server
