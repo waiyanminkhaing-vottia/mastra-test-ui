@@ -14,6 +14,11 @@ export interface BotMessage extends Message {
   isStreaming: boolean;
 }
 
+export interface ContinueMessage extends Message {
+  type: 'continue';
+  content: string;
+}
+
 export interface ToolCallMessage extends Message {
   type: 'tool';
   name: string;
@@ -22,11 +27,18 @@ export interface ToolCallMessage extends Message {
   status: 'start' | 'toolCalling' | 'complete' | 'error';
 }
 
+export type MessageTypes =
+  | UserMessage
+  | BotMessage
+  | ContinueMessage
+  | ToolCallMessage;
+
 export interface StreamChunk {
   type: string;
   payload: {
     text?: string;
     toolName?: string;
+    toolCallId?: string;
     args?: JSON;
     result?: JSON;
   };

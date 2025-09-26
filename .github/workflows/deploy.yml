@@ -1,0 +1,210 @@
+name: Deploy Next.js App to Lightsail
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Application to deploy'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - sanden
+          - fasthelp
+      environment:
+        description: 'Environment to deploy'
+        required: false
+        default: 'development'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set application configuration
+        run: |
+          case "${{ github.event.inputs.app_name }}" in
+            "default")
+              echo "APP_PORT=3000" >> $GITHUB_ENV
+              echo "CONTAINER_NAME=mastra-test-ui-default" >> $GITHUB_ENV
+              ;;
+            "sanden")
+              echo "APP_PORT=3001" >> $GITHUB_ENV
+              echo "CONTAINER_NAME=mastra-test-ui-sanden" >> $GITHUB_ENV
+              ;;
+            "fasthelp")
+              echo "APP_PORT=3002" >> $GITHUB_ENV
+              echo "CONTAINER_NAME=mastra-test-ui-fasthelp" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Unknown app: ${{ github.event.inputs.app_name }}"
+              exit 1
+              ;;
+          esac
+
+          echo "IMAGE_NAME=mastra-test-ui:${{ github.event.inputs.app_name }}" >> $GITHUB_ENV
+          echo "DEPLOY_ENV=${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_ENV
+
+      - name: Setup SSH for deployment
+        run: |
+          echo "Setting up SSH connection..."
+
+          # Set connection details from Terraform variables
+          LIGHTSAIL_HOST=$(grep 'default.*=' terraform/variables.tf | grep 'test.dev-maestra.vottia.me' | sed 's/.*"\(.*\)".*/\1/')
+          LIGHTSAIL_USER="ec2-user"
+
+          echo "Host: $LIGHTSAIL_HOST"
+          echo "User: $LIGHTSAIL_USER"
+          echo "App: ${{ github.event.inputs.app_name }}"
+          echo "Port: ${{ env.APP_PORT }}"
+          echo "Environment: ${{ env.DEPLOY_ENV }}"
+
+          # Export for later steps
+          echo "LIGHTSAIL_HOST=$LIGHTSAIL_HOST" >> $GITHUB_ENV
+          echo "LIGHTSAIL_USER=$LIGHTSAIL_USER" >> $GITHUB_ENV
+
+          # Setup SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          # Add host to known_hosts and test connection
+          ssh-keyscan -H $LIGHTSAIL_HOST >> ~/.ssh/known_hosts
+          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no $LIGHTSAIL_USER@$LIGHTSAIL_HOST "echo 'SSH connection successful'"
+
+      - name: Build and deploy Next.js container
+        run: |
+          # Create temporary deployment script
+          cat > deploy_script.sh << 'SCRIPT_EOF'
+            # Ensure Docker is running
+            if ! sudo docker info >/dev/null 2>&1; then
+              echo "Starting Docker service..."
+              sudo systemctl start docker
+              sleep 3
+            fi
+
+            # Use existing mastra-test-network
+            echo "Using existing mastra-test-network..."
+            echo "Deploying ${{ github.event.inputs.app_name }} on port ${{ env.APP_PORT }}"
+          SCRIPT_EOF
+
+          # Copy the script and source code to the server
+          scp deploy_script.sh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }}:~/
+
+          # Create a tar of the source code (excluding node_modules and build artifacts)
+          tar --exclude='node_modules' --exclude='.next' --exclude='.git' --exclude='tsconfig.tsbuildinfo' -czf source.tar.gz .
+          scp source.tar.gz ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }}:~/
+
+          # Execute deployment on the server
+          ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << EOF
+            # Make script executable and run initial setup
+            chmod +x ~/deploy_script.sh
+            ~/deploy_script.sh
+
+            # Stop and remove existing container for this app
+            sudo docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+            sudo docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+
+            # Remove old image to save space
+            sudo docker rmi ${{ env.IMAGE_NAME }} 2>/dev/null || true
+
+            # Extract source code
+            rm -rf ~/mastra-test-ui-build 2>/dev/null || true
+            mkdir -p ~/mastra-test-ui-build
+            cd ~/mastra-test-ui-build
+            tar -xzf ~/source.tar.gz
+
+            # Build the Docker image with custom port and environment
+            sudo docker build \
+              --build-arg ENV=${{ env.DEPLOY_ENV }} \
+              --build-arg CUSTOM_PORT=${{ env.APP_PORT }} \
+              -t ${{ env.IMAGE_NAME }} .
+
+            # Deploy the container
+            sudo docker run -d \
+              --name ${{ env.CONTAINER_NAME }} \
+              --network mastra-test-network \
+              --restart unless-stopped \
+              -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
+              -e PORT=${{ env.APP_PORT }} \
+              ${{ env.IMAGE_NAME }}
+
+            # Clean up build files
+            cd ~
+            rm -f ~/source.tar.gz ~/deploy_script.sh
+            rm -rf ~/mastra-test-ui-build
+
+            # Clean up Docker images (keep recent ones)
+            sudo docker image prune -f
+          EOF
+
+      - name: Verify deployment
+        run: |
+          ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << EOF
+            echo "Checking container status for ${{ env.CONTAINER_NAME }}..."
+            sudo docker ps | grep ${{ env.CONTAINER_NAME }}
+
+            echo "Checking container logs..."
+            sudo docker logs ${{ env.CONTAINER_NAME }} --tail=20
+
+            echo "Waiting for ${{ github.event.inputs.app_name }} app to be ready on port ${{ env.APP_PORT }}..."
+            for i in {1..30}; do
+              if curl -f -s http://localhost:${{ env.APP_PORT }} >/dev/null 2>&1; then
+                echo "✅ ${{ github.event.inputs.app_name }} app is ready on port ${{ env.APP_PORT }}"
+
+                # Test health/status endpoint if available
+                echo "Testing health endpoint..."
+                if curl -s --connect-timeout 5 http://localhost:${{ env.APP_PORT }}/health 2>/dev/null | grep -q "healthy\|ok\|up" || curl -s --connect-timeout 5 http://localhost:${{ env.APP_PORT }}/api/health 2>/dev/null | grep -q "healthy\|ok\|up"; then
+                  echo "✅ Health endpoint is responding"
+                else
+                  echo "⚠️ Health endpoint not found (this is normal if not implemented)"
+                fi
+
+                # Test basic page load
+                echo "Testing page load..."
+                if curl -s --connect-timeout 5 http://localhost:${{ env.APP_PORT }} | grep -q "<html\|<!DOCTYPE\|<head"; then
+                  echo "✅ App is serving HTML content"
+                else
+                  echo "⚠️ App may not be serving proper HTML content"
+                fi
+
+                break
+              else
+                echo "⏳ Waiting for ${{ github.event.inputs.app_name }} app... (\$i/30)"
+                sleep 2
+              fi
+            done
+
+            echo "All running containers:"
+            sudo docker ps | grep mastra-test-ui
+
+            echo "✅ Deployment verification completed"
+          EOF
+
+      - name: Deployment summary
+        run: |
+          echo "🚀 Deployment Summary:"
+          echo "- Application: ${{ github.event.inputs.app_name }}"
+          echo "- Environment: ${{ env.DEPLOY_ENV }}"
+          echo "- Port: ${{ env.APP_PORT }}"
+          echo "- Container: ${{ env.CONTAINER_NAME }}"
+          echo "- Image: ${{ env.IMAGE_NAME }}"
+          echo "- Host: ${{ env.LIGHTSAIL_HOST }}"
+          echo "- Network: mastra-test-network"
+          echo ""
+          echo "🔗 Access your application at: http://${{ env.LIGHTSAIL_HOST }}:${{ env.APP_PORT }}"
+          echo ""
+          echo "📋 Container Management Commands:"
+          echo "- View logs: sudo docker logs ${{ env.CONTAINER_NAME }}"
+          echo "- Stop: sudo docker stop ${{ env.CONTAINER_NAME }}"
+          echo "- Start: sudo docker start ${{ env.CONTAINER_NAME }}"
+          echo "- Remove: sudo docker rm ${{ env.CONTAINER_NAME }}"

@@ -1,7 +1,7 @@
 'use client';
 
 import { Send, Square } from 'lucide-react';
-import { KeyboardEvent, useState } from 'react';
+import { KeyboardEvent, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,6 +33,7 @@ export function ChatInput({
   placeholder = 'Type your message...',
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
+  const isComposingRef = useRef(false);
 
   /**
    * Handles sending the message.
@@ -49,10 +50,24 @@ export function ChatInput({
    * @param e - Keyboard event
    */
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  /**
+   * Handles IME composition start (when typing Japanese, Chinese, etc.)
+   */
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  /**
+   * Handles IME composition end (when finishing typing Japanese, Chinese, etc.)
+   */
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false;
   };
 
   return (
@@ -63,6 +78,8 @@ export function ChatInput({
             value={message}
             onChange={e => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             placeholder={placeholder}
             disabled={isLoading}
             className="min-h-[60px] max-h-[200px] resize-none"

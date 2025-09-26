@@ -1,19 +1,23 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { BotMessage, ToolCallMessage, UserMessage } from '@/types/chat';
+import type { MessageTypes } from '@/types/chat';
 
 import { ChatMessageMarkdown } from './chat-message-markdown';
 import { ToolDisplay } from './tool-display';
 
 interface ChatMessageProps {
-  message: UserMessage | BotMessage | ToolCallMessage;
+  message: MessageTypes;
 }
 
 const MessageContent = ({ message }: ChatMessageProps) => {
   switch (message.type) {
     case 'user':
       return <>{message.content}</>;
+
+    case 'continue':
+      return <Badge variant="outline">{message.content}</Badge>;
 
     case 'tool':
       return <ToolDisplay message={message} />;

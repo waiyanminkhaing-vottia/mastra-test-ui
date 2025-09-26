@@ -7,7 +7,8 @@
     "formulahendry.auto-rename-tag",
     "christian-kohler.path-intellisense",
     "zignd.html-css-class-completion",
-    "editorconfig.editorconfig"
+    "editorconfig.editorconfig",
+    "Zignd.html-css-class-completion"
   ],
   "unwantedRecommendations": []
 }

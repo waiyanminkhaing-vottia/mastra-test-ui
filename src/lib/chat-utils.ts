@@ -2,7 +2,7 @@
  * Generates a unique message ID with role prefix and timestamp
  */
 export const generateMessageId = (
-  role: 'user' | 'assistant' | 'tool' | 'error'
+  role: 'user' | 'assistant' | 'tool' | 'error' | 'continue'
 ) => `${role}-${Date.now()}`;
 
 /**
