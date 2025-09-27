@@ -325,7 +325,7 @@ const createInitialMessage = (content: string): UserMessage => {
   };
 };
 
-const createErrorMessage = (error: unknown): BotMessage => {
+const createErrorMessage = (_error: unknown): BotMessage => {
   return {
     id: generateMessageId('error'),
     type: 'bot',
