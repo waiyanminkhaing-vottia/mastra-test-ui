@@ -243,7 +243,7 @@ const handleToolResult = (
   if (resultToolCallId) {
     const result = streamChunk.payload.result;
     const hasError = hasToolError(result);
-    const _currentState = get();
+    get(); // Access state for potential future use
 
     set(state => ({
       ...state,
