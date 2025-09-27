@@ -1,11 +1,9 @@
 import { MastraClient } from '@mastra/client-js';
 
 // Validate environment variable at startup
-const url = process.env.NEXT_PUBLIC_MASTRA_SERVER_URL;
+const url = process.env.MASTRA_SERVER_URL;
 if (!url) {
-  throw new Error(
-    'NEXT_PUBLIC_MASTRA_SERVER_URL environment variable is required'
-  );
+  throw new Error('MASTRA_SERVER_URL environment variable is required');
 }
 
 /**
@@ -13,4 +11,10 @@ if (!url) {
  */
 export const mastraClient = new MastraClient({
   baseUrl: url,
+  retries: 3,
+  backoffMs: 300,
+  maxBackoffMs: 5000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });

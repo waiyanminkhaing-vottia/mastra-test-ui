@@ -1,18 +1,16 @@
 /**
- * Generates a unique message ID with role prefix and timestamp
+ * Generates a unique message ID with role prefix using crypto.randomUUID
  */
 export const generateMessageId = (
   role: 'user' | 'assistant' | 'tool' | 'error' | 'continue'
-) => `${role}-${Date.now()}`;
+) => `${role}-${crypto.randomUUID()}`;
 
 /**
  * Generates a unique thread ID for chat sessions
  */
-export const generateThreadId = () =>
-  `thread-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+export const generateThreadId = () => `thread-${crypto.randomUUID()}`;
 
 /**
  * Generates a unique resource ID for chat sessions
  */
-export const generateResourceId = () =>
-  `resource-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+export const generateResourceId = () => `resource-${crypto.randomUUID()}`;

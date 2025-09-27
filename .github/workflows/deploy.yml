@@ -23,7 +23,49 @@ on:
           - development
 
 jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Type check
+        run: pnpm run type-check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
   deploy:
+    needs: build-and-test
     runs-on: ubuntu-latest
 
     steps:
@@ -35,14 +77,17 @@ jobs:
           case "${{ github.event.inputs.app_name }}" in
             "default")
               echo "APP_PORT=3000" >> $GITHUB_ENV
+              echo "MASTRA_PORT=4000" >> $GITHUB_ENV
               echo "CONTAINER_NAME=mastra-test-ui-default" >> $GITHUB_ENV
               ;;
             "sanden")
               echo "APP_PORT=3001" >> $GITHUB_ENV
+              echo "MASTRA_PORT=4001" >> $GITHUB_ENV
               echo "CONTAINER_NAME=mastra-test-ui-sanden" >> $GITHUB_ENV
               ;;
             "fasthelp")
               echo "APP_PORT=3002" >> $GITHUB_ENV
+              echo "MASTRA_PORT=4002" >> $GITHUB_ENV
               echo "CONTAINER_NAME=mastra-test-ui-fasthelp" >> $GITHUB_ENV
               ;;
             *)
@@ -53,6 +98,10 @@ jobs:
 
           echo "IMAGE_NAME=mastra-test-ui:${{ github.event.inputs.app_name }}" >> $GITHUB_ENV
           echo "DEPLOY_ENV=${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_ENV
+
+          echo "Configuration set for ${{ github.event.inputs.app_name }}:"
+          echo "- Next.js Port: ${APP_PORT}"
+          echo "- Mastra Port: ${MASTRA_PORT}"
 
       - name: Setup SSH for deployment
         run: |
@@ -141,15 +190,18 @@ jobs:
             sudo docker build \
               --build-arg ENV=${{ env.DEPLOY_ENV }} \
               --build-arg CUSTOM_PORT=${{ env.APP_PORT }} \
+              --build-arg APP_NAME=${{ github.event.inputs.app_name }} \
               -t ${{ env.IMAGE_NAME }} .
 
-            # Deploy the container
+            # Deploy the container with both Next.js and Mastra ports
             sudo docker run -d \
               --name ${{ env.CONTAINER_NAME }} \
               --network mastra-test-network \
               --restart unless-stopped \
               -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
+              -p ${{ env.MASTRA_PORT }}:${{ env.MASTRA_PORT }} \
               -e PORT=${{ env.APP_PORT }} \
+              -e APP_NAME=${{ github.event.inputs.app_name }} \
               ${{ env.IMAGE_NAME }}
 
             # Clean up build files
@@ -209,13 +261,16 @@ jobs:
           echo "🚀 Deployment Summary:"
           echo "- Application: ${{ github.event.inputs.app_name }}"
           echo "- Environment: ${{ env.DEPLOY_ENV }}"
-          echo "- Port: ${{ env.APP_PORT }}"
+          echo "- Next.js Port: ${{ env.APP_PORT }}"
+          echo "- Mastra Port: ${{ env.MASTRA_PORT }}"
           echo "- Container: ${{ env.CONTAINER_NAME }}"
           echo "- Image: ${{ env.IMAGE_NAME }}"
           echo "- Host: ${{ env.LIGHTSAIL_HOST }}"
           echo "- Network: mastra-test-network"
           echo ""
-          echo "🔗 Access your application at: http://${{ env.LIGHTSAIL_HOST }}:${{ env.APP_PORT }}"
+          echo "🔗 Access your application:"
+          echo "  - Next.js UI: http://${{ env.LIGHTSAIL_HOST }}:${{ env.APP_PORT }}"
+          echo "  - Mastra API: http://${{ env.LIGHTSAIL_HOST }}:${{ env.MASTRA_PORT }}"
           echo ""
           echo "📋 Container Management Commands:"
           echo "- View logs: sudo docker logs ${{ env.CONTAINER_NAME }}"

@@ -1,7 +1,7 @@
 'use client';
 
 import { Send, Square } from 'lucide-react';
-import { KeyboardEvent, useRef, useState } from 'react';
+import { KeyboardEvent, memo, useCallback, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,12 +10,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { UI_CONFIG } from '@/lib/config';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
   isLoading?: boolean;
   onStop?: () => void;
   placeholder?: string;
+  maxLength?: number;
 }
 
 /**
@@ -25,36 +27,69 @@ interface ChatInputProps {
  * @param props.isLoading - Whether a response is being generated
  * @param props.onStop - Callback to stop generation
  * @param props.placeholder - Input placeholder text
+ * @param props.maxLength - Maximum message length allowed
  */
-export function ChatInput({
+const ChatInputComponent = ({
   onSendMessage,
   isLoading = false,
   onStop,
   placeholder = 'Type your message...',
-}: ChatInputProps) {
+  maxLength = UI_CONFIG.MESSAGE_INPUT_MAX_LENGTH,
+}: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const isComposingRef = useRef(false);
 
   /**
+   * Sanitizes user input to prevent XSS and clean up formatting
+   */
+  const sanitizeMessage = useCallback(
+    (input: string): string => {
+      return input
+        .replace(/^\s+|\s+$/g, '') // Trim whitespace
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
+        .substring(0, maxLength); // Enforce length limit
+    },
+    [maxLength]
+  );
+
+  /**
    * Handles sending the message.
    */
-  const handleSend = () => {
-    if (message.trim() && !isLoading) {
-      onSendMessage(message.trim());
+  const handleSend = useCallback(() => {
+    const sanitized = sanitizeMessage(message);
+
+    if (sanitized && !isLoading && sanitized.length > 0) {
+      onSendMessage(sanitized);
       setMessage('');
     }
-  };
+  }, [message, isLoading, onSendMessage, sanitizeMessage]);
+
+  /**
+   * Handles input changes with length validation
+   */
+  const handleInputChange = useCallback(
+    (value: string) => {
+      if (value.length <= maxLength) {
+        setMessage(value);
+      }
+    },
+    [maxLength]
+  );
 
   /**
    * Handles keyboard shortcuts in the textarea.
    * @param e - Keyboard event
    */
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend]
+  );
 
   /**
    * Handles IME composition start (when typing Japanese, Chinese, etc.)
@@ -76,15 +111,26 @@ export function ChatInput({
         <div className="flex-1 relative">
           <Textarea
             value={message}
-            onChange={e => setMessage(e.target.value)}
+            onChange={e => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
             placeholder={placeholder}
             disabled={isLoading}
-            className="min-h-[60px] max-h-[200px] resize-none"
+            className={`min-h-[60px] max-h-[${UI_CONFIG.MESSAGE_INPUT_MAX_HEIGHT}px] resize-none`}
             rows={1}
+            aria-label="Chat message input"
+            aria-describedby="message-length-indicator"
           />
+          {message.length >
+            maxLength * UI_CONFIG.MESSAGE_LENGTH_WARNING_THRESHOLD && (
+            <div
+              id="message-length-indicator"
+              className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background px-1 rounded"
+            >
+              {message.length}/{maxLength}
+            </div>
+          )}
         </div>
 
         {isLoading ? (
@@ -127,4 +173,9 @@ export function ChatInput({
       </div>
     </>
   );
-}
+};
+
+/**
+ *
+ */
+export const ChatInput = memo(ChatInputComponent);

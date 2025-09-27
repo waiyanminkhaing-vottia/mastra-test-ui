@@ -22,8 +22,8 @@ export interface ContinueMessage extends Message {
 export interface ToolCallMessage extends Message {
   type: 'tool';
   name: string;
-  args?: JSON;
-  result?: JSON;
+  args?: Record<string, unknown>;
+  result?: Record<string, unknown>;
   status: 'start' | 'toolCalling' | 'complete' | 'error';
 }
 
@@ -34,12 +34,56 @@ export type MessageTypes =
   | ToolCallMessage;
 
 export interface StreamChunk {
-  type: string;
+  type:
+    | 'text-start'
+    | 'text-delta'
+    | 'text-end'
+    | 'tool-call'
+    | 'tool-result'
+    | 'finish'
+    | 'error'
+    | string;
   payload: {
     text?: string;
     toolName?: string;
     toolCallId?: string;
-    args?: JSON;
-    result?: JSON;
+    args?: Record<string, unknown>;
+    result?: Record<string, unknown>;
+    error?: string;
   };
 }
+
+// Type guard functions for better type safety
+/**
+ * Type guard to check if a message is a user message
+ */
+export const isUserMessage = (
+  message: MessageTypes
+): message is UserMessage => {
+  return message.type === 'user';
+};
+
+/**
+ * Type guard to check if a message is a bot message
+ */
+export const isBotMessage = (message: MessageTypes): message is BotMessage => {
+  return message.type === 'bot';
+};
+
+/**
+ * Type guard to check if a message is a tool call message
+ */
+export const isToolCallMessage = (
+  message: MessageTypes
+): message is ToolCallMessage => {
+  return message.type === 'tool';
+};
+
+/**
+ * Type guard to check if a message is a continue message
+ */
+export const isContinueMessage = (
+  message: MessageTypes
+): message is ContinueMessage => {
+  return message.type === 'continue';
+};

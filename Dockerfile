@@ -21,13 +21,26 @@ COPY --from=deps /app/node_modules ./node_modules
 # Install pnpm
 RUN npm install -g pnpm
 
-# Build argument for environment
+# Build arguments for environment and app
 ARG ENV=production
+ARG APP_NAME=default
 
-# Copy environment-specific .env file with fallback
-RUN echo "Copying environment file for: ${ENV}"
+# Set base path based on app name for build
+RUN case "${APP_NAME}" in \
+      "default") \
+        BASE_PATH="" ;; \
+      "sanden") \
+        BASE_PATH="/sanden" ;; \
+      "fasthelp") \
+        BASE_PATH="/fasthelp" ;; \
+      *) \
+        BASE_PATH="" ;; \
+    esac && \
+    echo "NEXT_PUBLIC_BASE_PATH=${BASE_PATH}" > .env && \
+    echo "Created .env with BASE_PATH=${BASE_PATH} for app: ${APP_NAME}"
+
+# Copy only specific env files needed for build
 COPY .env* ./
-RUN if [ -f ".env.${ENV}" ]; then cp .env.${ENV} .env; elif [ ! -f ".env" ]; then echo "No environment file found!"; exit 1; fi
 
 # Copy the rest of the application
 COPY . .
@@ -59,4 +72,12 @@ ARG CUSTOM_PORT=3000
 ENV PORT=$CUSTOM_PORT
 EXPOSE $CUSTOM_PORT
 
-CMD ["node", "server.js"]
+# Set Mastra server URL based on app name (same container, different ports)
+ARG APP_NAME=default
+ENV APP_NAME=${APP_NAME}
+
+# Copy secure startup script
+COPY --chown=nextjs:nextjs docker/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
