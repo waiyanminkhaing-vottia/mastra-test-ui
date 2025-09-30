@@ -15,9 +15,6 @@ RUN pnpm config set auto-install-peers false && pnpm install --frozen-lockfile
 # Copy source files
 COPY . .
 
-# Generate Prisma client
-RUN pnpm prisma:generate
-
 # Build the application
 RUN pnpm build
 
@@ -35,8 +32,6 @@ COPY --from=builder /app/pnpm-lock.yaml* ./
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Set environment variables
 ENV NODE_ENV=production
