@@ -181,11 +181,42 @@ jobs:
           # Rename environment-specific file to .env for build
           mv ".env.$ENV_FILE" .env
 
+          # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on service
+          if [ "$SERVICE" = "fasthelp" ]; then
+            BASE_PATH="/fasthelp"
+            MASTRA_SERVER_URL="http://localhost:4002"
+          else
+            BASE_PATH=""
+            MASTRA_SERVER_URL="http://localhost:4001"
+          fi
+
+          # Update NEXT_PUBLIC_BASE_PATH in .env file
+          echo "🔍 Setting NEXT_PUBLIC_BASE_PATH='$BASE_PATH' for service: $SERVICE"
+          if grep -q "^NEXT_PUBLIC_BASE_PATH=" .env; then
+            # Replace existing NEXT_PUBLIC_BASE_PATH
+            sed -i "s|^NEXT_PUBLIC_BASE_PATH=.*|NEXT_PUBLIC_BASE_PATH=$BASE_PATH|" .env
+          else
+            # Add NEXT_PUBLIC_BASE_PATH if it doesn't exist
+            echo "NEXT_PUBLIC_BASE_PATH=$BASE_PATH" >> .env
+          fi
+
+          # Update MASTRA_SERVER_URL in .env file
+          echo "🔍 Setting MASTRA_SERVER_URL='$MASTRA_SERVER_URL' for service: $SERVICE"
+          if grep -q "^MASTRA_SERVER_URL=" .env; then
+            # Replace existing MASTRA_SERVER_URL
+            sed -i "s|^MASTRA_SERVER_URL=.*|MASTRA_SERVER_URL=$MASTRA_SERVER_URL|" .env
+          else
+            # Add MASTRA_SERVER_URL if it doesn't exist
+            echo "MASTRA_SERVER_URL=$MASTRA_SERVER_URL" >> .env
+          fi
+
           # Verify build environment file
           echo "🔍 Build environment file verified:"
           if [ -f ".env" ]; then
             echo "✅ .env file ready for build (from $ENV_FILE)"
             echo "📄 File size: $(wc -l < ".env") lines"
+            echo "🔍 NEXT_PUBLIC_BASE_PATH: $(grep "^NEXT_PUBLIC_BASE_PATH=" .env || echo "not set")"
+            echo "🔍 MASTRA_SERVER_URL: $(grep "^MASTRA_SERVER_URL=" .env || echo "not set")"
             echo "📁 Remaining env files:"
             ls -la .env* 2>/dev/null || echo "Only .env exists"
           else
