@@ -80,16 +80,8 @@ jobs:
           BRANCH="${{ github.ref_name }}"
           SERVICE="${{ github.event.inputs.service }}"
 
-          # Set port based on service
-          if [ "$SERVICE" = "fasthelp" ]; then
-            PORT=3002
-          else
-            PORT=3001
-          fi
-
           echo "Deploying from branch: $BRANCH"
           echo "Service: $SERVICE"
-          echo "Port: $PORT"
 
           # Configure git with token authentication
           echo "Configuring git authentication..."
@@ -142,15 +134,32 @@ jobs:
             ls -la .env*
           fi
 
+          # Set port and URLs based on service
+          if [ "$SERVICE" = "fasthelp" ]; then
+            PORT=3002
+            MASTRA_SERVER_URL="http://localhost:4002"
+          else
+            PORT=3001
+            MASTRA_SERVER_URL="http://localhost:4001"
+          fi
+
           # Copy environment file to deployment location
           sudo mkdir -p /opt/mastra-test-ui
           sudo cp ".env.$ENV_FILE" "/opt/mastra-test-ui/.env.$ENV_FILE"
+
+          # Update MASTRA_SERVER_URL in the runtime env file
+          if sudo grep -q "^MASTRA_SERVER_URL=" "/opt/mastra-test-ui/.env.$ENV_FILE"; then
+            sudo sed -i "s|^MASTRA_SERVER_URL=.*|MASTRA_SERVER_URL=$MASTRA_SERVER_URL|" "/opt/mastra-test-ui/.env.$ENV_FILE"
+          else
+            echo "MASTRA_SERVER_URL=$MASTRA_SERVER_URL" | sudo tee -a "/opt/mastra-test-ui/.env.$ENV_FILE"
+          fi
 
           # Verify copied file (without exposing contents)
           echo "🔍 Verifying copied file:"
           if [ -f "/opt/mastra-test-ui/.env.$ENV_FILE" ]; then
             echo "✅ Environment file copied successfully"
             echo "📄 File size: $(sudo wc -l < "/opt/mastra-test-ui/.env.$ENV_FILE") lines"
+            echo "🔍 MASTRA_SERVER_URL: $(sudo grep "^MASTRA_SERVER_URL=" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "not set")"
           else
             echo "❌ Failed to copy environment file"
             exit 1
