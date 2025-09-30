@@ -6,11 +6,13 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Build outputs
-.next
-out
-dist
+.next/
+out/
+dist/
+build/
 
-# Environment variables (keep .env for build)
+# Environment variables
+.env
 .env.local
 .env.development.local
 .env.test.local
@@ -20,46 +22,57 @@ dist
 .git
 .gitignore
 
-# IDE
-.vscode
-.idea
+# IDE and editor files
+.vscode/
+.idea/
 *.swp
 *.swo
+*.sublime-*
 
-# OS
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # Logs
+logs
 *.log
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage
-*.lcov
-
-# ESLint cache
-.eslintcache
-
-# TypeScript cache
-tsconfig.tsbuildinfo
-
-# Husky
-.husky
-
 # Testing
+coverage/
 .nyc_output
 
-# Docker
+# Misc
+README.md
 Dockerfile
 .dockerignore
 docker-compose*.yml
 
-# Misc
-README.md
-sample-response.txt
+# Temporary files
+.tmp/
+.temp/
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Husky
+.husky/
+
+# Linting and formatting
+.eslintcache
+.prettierignore
+
+# Infrastructure
+.github/
+
+# Docker development files
+docker-compose.override.yml
+docker-compose.dev.yml
