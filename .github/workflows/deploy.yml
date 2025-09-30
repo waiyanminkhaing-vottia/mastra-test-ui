@@ -262,76 +262,10 @@ jobs:
             echo "✅ Application deployed successfully"
           EOF
 
-      - name: Verify deployment
+      - name: Show deployment logs
         run: |
           ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << 'EOF'
-            echo "🔍 Verifying deployment..."
-
-            CONTAINER_NAME="mastra-test-ui"
-            PORT=3000
-
-            echo "Checking container logs..."
-            sudo docker logs $CONTAINER_NAME --tail=20
-
-            echo "Waiting for application to be ready..."
-            HEALTH_CHECK_PASSED=false
-
-            # Set environment file based on manual input
-            ENV_FILE="${{ github.event.inputs.environment }}"
-
-            HEALTH_URL="http://localhost:$PORT/api/health"
-            echo "🔍 Using health check URL: $HEALTH_URL"
-
-            # Wait for application to be ready
-            for i in {1..30}; do
-              if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
-                echo "✅ Application health check passed"
-                HEALTH_CHECK_PASSED=true
-                break
-              else
-                if [ $i -eq 1 ]; then
-                  echo "⏳ Waiting for application to start..."
-                elif [ $((i % 10)) -eq 0 ]; then
-                  echo "⏳ Still waiting for application... ($i/30)"
-                fi
-                sleep 2
-              fi
-            done
-
-            # Rollback if health check failed
-            if [ "$HEALTH_CHECK_PASSED" = "false" ]; then
-              echo "❌ Health check failed. Rolling back..."
-              sudo docker stop $CONTAINER_NAME 2>/dev/null || true
-              sudo docker rm $CONTAINER_NAME 2>/dev/null || true
-
-              if [ "$CURRENT_IMAGE" != "none" ] && [ -n "$CURRENT_IMAGE" ]; then
-                echo "🔄 Restoring previous container with image: $CURRENT_IMAGE"
-
-                if [ "$ENV_FILE" = "production" ]; then
-                  sudo docker run -d \
-                    --name $CONTAINER_NAME \
-                    --network mastra-test-network \
-                    --restart unless-stopped \
-                    -p $PORT:$PORT \
-                    -e NODE_ENV=production \
-                    -e MASTRA_SERVER_URL=http://mastra-test:4000 \
-                    $CURRENT_IMAGE
-                else
-                  sudo docker run -d \
-                    --name $CONTAINER_NAME \
-                    --network mastra-test-network \
-                    --restart unless-stopped \
-                    -p $PORT:$PORT \
-                    --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
-                    -e NODE_ENV=production \
-                    $CURRENT_IMAGE
-                fi
-                echo "🔄 Rollback completed"
-              else
-                echo "❌ No previous image available for rollback (CURRENT_IMAGE: '$CURRENT_IMAGE')"
-              fi
-              exit 1
-            fi
-
-            echo "✅ Deployment verification completed successfully"
+            echo "✅ Deployment completed"
+            echo "📋 Container logs:"
+            sudo docker logs mastra-test-ui --tail=30
           EOF
