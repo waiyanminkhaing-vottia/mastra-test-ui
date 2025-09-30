@@ -36,9 +36,6 @@ RUN corepack enable pnpm
 # NODE_ENV should always be production for optimized builds
 ENV NODE_ENV=production
 
-# Generate Prisma client
-RUN pnpm prisma:generate
-
 # Build the application with env vars from .env file
 # Load .env and export variables before building
 RUN set -a; \
