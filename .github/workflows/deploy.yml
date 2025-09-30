@@ -193,10 +193,10 @@ jobs:
           # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on service
           if [ "$SERVICE" = "fasthelp" ]; then
             BASE_PATH="/fasthelp"
-            MASTRA_SERVER_URL="http://localhost:4002"
+            MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
           else
             BASE_PATH=""
-            MASTRA_SERVER_URL="http://localhost:4001"
+            MASTRA_SERVER_URL="http://mastra-test:4001"
           fi
 
           # Update NEXT_PUBLIC_BASE_PATH in .env file
