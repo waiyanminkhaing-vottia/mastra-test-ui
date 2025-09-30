@@ -1,4 +1,4 @@
-name: Deploy Mastra Test Dashboard
+name: Deploy Mastra Test UI
 
 on:
   workflow_dispatch:
