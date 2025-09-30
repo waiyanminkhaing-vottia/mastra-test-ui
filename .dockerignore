@@ -12,7 +12,7 @@ dist/
 build/
 
 # Environment variables
-.env
+# Note: .env is needed for build-time variables, excluded *.local files only
 .env.local
 .env.development.local
 .env.test.local
@@ -70,8 +70,10 @@ docker-compose*.yml
 .eslintcache
 .prettierignore
 
-# Infrastructure
+# Terraform and infrastructure
+terraform/
 .github/
+nginx-routes.json
 
 # Docker development files
 docker-compose.override.yml

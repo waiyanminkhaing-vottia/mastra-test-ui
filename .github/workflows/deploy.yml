@@ -11,6 +11,14 @@ on:
         options:
           - development
           - production
+      service:
+        description: 'Service to deploy'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - fasthelp
 
 jobs:
   deploy:
@@ -65,18 +73,27 @@ jobs:
           fi
           echo "✅ Using git: $GIT_CMD"
 
+          # Clean up old mastra-test-ui images (keep latest 3)
+          sudo docker images localhost:5000/mastra-test-ui --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi || true
+
           # Clone/update repository with authentication
           BRANCH="${{ github.ref_name }}"
-          IMAGE_NAME="mastra-test-ui-${BRANCH}"
+          SERVICE="${{ github.event.inputs.service }}"
+
+          # Set port based on service
+          if [ "$SERVICE" = "fasthelp" ]; then
+            PORT=3002
+          else
+            PORT=3001
+          fi
 
           echo "Deploying from branch: $BRANCH"
-          echo "Image name: $IMAGE_NAME"
-
-          # Clean up old images for this branch (keep latest 3)
-          sudo docker images localhost:5000/$IMAGE_NAME --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi || true
+          echo "Service: $SERVICE"
+          echo "Port: $PORT"
 
           # Configure git with token authentication
           echo "Configuring git authentication..."
+          # Remove token logging for security
 
           # Test token with GitHub API first
           echo "Testing token with GitHub API..."
@@ -96,6 +113,8 @@ jobs:
 
           if [ -d "/tmp/mastra-test-ui" ]; then
             cd /tmp/mastra-test-ui
+            # Stash any local changes to prevent merge conflicts
+            $GIT_CMD stash push -m "Auto-stash before deployment $(date +%Y%m%d_%H%M%S)" || true
             $GIT_CMD fetch "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-ui.git"
             $GIT_CMD checkout $BRANCH
             $GIT_CMD pull "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-ui.git" $BRANCH
@@ -139,26 +158,48 @@ jobs:
 
           # Build and push image
           echo "Building Docker image..."
+          echo "$GITHUB_TOKEN" > /tmp/github_token
 
           # Get registry IP for tagging
           REGISTRY_IP=$(sudo docker inspect local-registry --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           echo "Registry IP: $REGISTRY_IP"
 
-          # Copy environment-specific file for build
-          cp ".env.$ENV_FILE" .env.production
+          # Log environment being built
+          echo "🔍 Building for environment: '$ENV_FILE'"
+
+          # Remove all .env files except the one we need
+          # This prevents Next.js from detecting and using the wrong environment
+          echo "🔍 Removing other env files to prevent conflicts..."
+          rm -f .env.local .env.example
+          if [ "$ENV_FILE" != "development" ]; then
+            rm -f .env.development
+          fi
+          if [ "$ENV_FILE" != "production" ]; then
+            rm -f .env.production
+          fi
+
+          # Rename environment-specific file to .env for build
+          mv ".env.$ENV_FILE" .env
 
           # Verify build environment file
           echo "🔍 Build environment file verified:"
-          if [ -f ".env.production" ]; then
-            echo "✅ .env.production file ready for build"
-            echo "📄 File size: $(wc -l < ".env.production") lines"
+          if [ -f ".env" ]; then
+            echo "✅ .env file ready for build (from $ENV_FILE)"
+            echo "📄 File size: $(wc -l < ".env") lines"
+            echo "📁 Remaining env files:"
+            ls -la .env* 2>/dev/null || echo "Only .env exists"
           else
-            echo "❌ .env.production file missing for build"
+            echo "❌ .env file missing for build"
             exit 1
           fi
 
-          # Build image
-          sudo docker build -t $IMAGE_NAME:latest .
+          # Build image using docker build with PORT argument
+          # Next.js will read NEXT_PUBLIC_* variables from .env file
+          sudo docker build \
+            --build-arg PORT=$PORT \
+            --secret id=github_token,src=/tmp/github_token \
+            -t mastra-test-ui:$ENV_FILE-$SERVICE-latest \
+            .
 
           # Configure Docker to allow insecure registry
           echo "Configuring Docker daemon for insecure registry..."
@@ -172,12 +213,13 @@ jobs:
           sleep 10
 
           # Tag image for registry
-          sudo docker tag $IMAGE_NAME:latest $REGISTRY_IP:5000/$IMAGE_NAME:latest
+          sudo docker tag mastra-test-ui:$ENV_FILE-$SERVICE-latest $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
 
           # Push to local registry
-          sudo docker push $REGISTRY_IP:5000/$IMAGE_NAME:latest
+          sudo docker push $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
+          rm -f /tmp/github_token
 
-          echo "✅ Image built and pushed: localhost:5000/$IMAGE_NAME:latest"
+          echo "✅ Image built and pushed: localhost:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest"
           SCRIPT_EOF
 
           # Copy script to remote and execute
@@ -188,12 +230,28 @@ jobs:
       - name: Deploy application container
         run: |
           ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << 'EOF'
-            echo "🚀 Deploying Mastra Test Dashboard..."
+            echo "🚀 Deploying Mastra Test UI..."
 
             # Ensure Docker network exists
             sudo docker network create mastra-test-network --driver bridge 2>/dev/null || true
 
-            CONTAINER_NAME="mastra-test-ui"
+            # Set service and port
+            SERVICE="${{ github.event.inputs.service }}"
+            ENV_FILE="${{ github.event.inputs.environment }}"
+
+            # Set port and container name based on service
+            if [ "$SERVICE" = "fasthelp" ]; then
+              PORT=3002
+              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            else
+              PORT=3001
+              CONTAINER_NAME="mastra-test-ui"
+            fi
+
+            echo "Service: $SERVICE"
+            echo "Port: $PORT"
+            echo "Container name: $CONTAINER_NAME"
+            echo "Deploying with environment: $ENV_FILE"
 
             # Store current image for rollback
             CURRENT_IMAGE=$(sudo docker inspect $CONTAINER_NAME --format='{{.Image}}' 2>/dev/null || echo "none")
@@ -203,58 +261,30 @@ jobs:
             sudo docker stop $CONTAINER_NAME 2>/dev/null || true
             sudo docker rm $CONTAINER_NAME 2>/dev/null || true
 
-            # Set environment file based on manual input
-            ENV_FILE="${{ github.event.inputs.environment }}"
-            BRANCH="${{ github.ref_name }}"
-            PORT=3000
-
-            # Create image name with branch
-            IMAGE_NAME="mastra-test-ui-${BRANCH}"
-
-            echo "Using environment: $ENV_FILE"
-            echo "Using branch: $BRANCH"
-            echo "Using port: $PORT"
-            echo "Container name: $CONTAINER_NAME"
-            echo "Image name: $IMAGE_NAME"
-
             # Get registry container IP from network
             REGISTRY_IP=$(sudo docker inspect local-registry --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
             echo "Using registry at: $REGISTRY_IP:5000"
 
             # Debug: Check environment file before deployment (safe variables only)
             echo "🔍 Environment file for container (non-sensitive vars only):"
-            sudo grep -E "^(LOG_LEVEL|NODE_ENV)" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "No safe variables found"
+            sudo grep -E "^(LOG_LEVEL|NEXT_PUBLIC_|ENABLE_)" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "No safe variables found"
 
             # Deploy container with environment-specific configuration
-            echo "🚀 Deploying UI with environment: $ENV_FILE on port: $PORT"
+            echo "🚀 Deploying with environment: $ENV_FILE"
 
-            if [ "$ENV_FILE" = "production" ]; then
-              echo "🔒 Using production deployment (environment variables only)"
-              # Production: Use environment variables directly (no env files)
-              sudo docker run -d \
-                --name $CONTAINER_NAME \
-                --network mastra-test-network \
-                --restart unless-stopped \
-                -p $PORT:$PORT \
-                -e NODE_ENV=production \
-                -e MASTRA_SERVER_URL=http://mastra-test:4000 \
-                $REGISTRY_IP:5000/$IMAGE_NAME:latest
-            else
-              echo "🧪 Using development deployment (env file + overrides)"
-              # Development: Use env file with production overrides
-              sudo docker run -d \
-                --name $CONTAINER_NAME \
-                --network mastra-test-network \
-                --restart unless-stopped \
-                -p $PORT:$PORT \
-                --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
-                -e NODE_ENV=production \
-                $REGISTRY_IP:5000/$IMAGE_NAME:latest
-            fi
+            # Deploy container with env file
+            sudo docker run -d \
+              --name $CONTAINER_NAME \
+              --network mastra-test-network \
+              --restart unless-stopped \
+              -p $PORT:$PORT \
+              -e PORT=$PORT \
+              --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
+              $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
 
             # Debug: Check safe environment variables in running container
             echo "🔍 Safe environment variables in container:"
-            sudo docker exec $CONTAINER_NAME env | grep -E "^(NODE_ENV|MASTRA_SERVER_URL)" | sort || echo "No safe env vars found"
+            sudo docker exec $CONTAINER_NAME env | grep -E "^(LOG_LEVEL|NEXT_PUBLIC_|NODE_ENV|ENABLE_|PORT)" | sort || echo "No safe env vars found"
 
             # Clean up old images (keep running container image)
             sudo docker images "*mastra-test-ui*" --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +3 | awk '{print $1}' | xargs -r sudo docker rmi || true
@@ -262,10 +292,91 @@ jobs:
             echo "✅ Application deployed successfully"
           EOF
 
-      - name: Show deployment logs
+      - name: Verify deployment
         run: |
           ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << 'EOF'
-            echo "✅ Deployment completed"
-            echo "📋 Container logs:"
-            sudo docker logs mastra-test-ui --tail=30
+            echo "🔍 Verifying deployment..."
+
+            # Set service and port
+            SERVICE="${{ github.event.inputs.service }}"
+            ENV_FILE="${{ github.event.inputs.environment }}"
+
+            # Set port and container name based on service
+            if [ "$SERVICE" = "fasthelp" ]; then
+              PORT=3002
+              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            else
+              PORT=3001
+              CONTAINER_NAME="mastra-test-ui"
+            fi
+
+            echo "Verifying service: $SERVICE on port: $PORT"
+
+            echo "Checking container status..."
+            sudo docker ps | grep $CONTAINER_NAME
+
+            echo "Checking container logs..."
+            sudo docker logs $CONTAINER_NAME --tail=20
+
+            echo "Waiting for application to be ready..."
+            HEALTH_CHECK_PASSED=false
+
+            # Get basePath from environment file for health check
+            echo "🔍 Looking for basePath in: /opt/mastra-test-ui/.env.$ENV_FILE"
+
+            if [ -f "/opt/mastra-test-ui/.env.$ENV_FILE" ]; then
+              BASE_PATH=$(grep "NEXT_PUBLIC_BASE_PATH" "/opt/mastra-test-ui/.env.$ENV_FILE" | cut -d'=' -f2 || echo "")
+              echo "🔍 Found BASE_PATH: '$BASE_PATH'"
+            else
+              echo "❌ Environment file not found, using empty basePath"
+              BASE_PATH=""
+            fi
+
+            HEALTH_URL="http://localhost:$PORT${BASE_PATH}/api/health"
+            echo "🔍 Using health check URL: $HEALTH_URL"
+
+            # Check container status
+            echo "🔍 Container status:"
+            sudo docker ps | grep $CONTAINER_NAME || echo "Container not found"
+
+            # Wait for application to be ready with the correct health endpoint
+            for i in {1..30}; do
+              if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+                echo "✅ Application health check passed"
+                HEALTH_CHECK_PASSED=true
+                break
+              else
+                if [ $i -eq 1 ]; then
+                  echo "⏳ Waiting for application to start..."
+                elif [ $((i % 10)) -eq 0 ]; then
+                  echo "⏳ Still waiting for application... ($i/30)"
+                fi
+                sleep 2
+              fi
+            done
+
+            # Rollback if health check failed
+            if [ "$HEALTH_CHECK_PASSED" = "false" ]; then
+              echo "❌ Health check failed. Rolling back..."
+              sudo docker stop $CONTAINER_NAME 2>/dev/null || true
+              sudo docker rm $CONTAINER_NAME 2>/dev/null || true
+
+              if [ "$CURRENT_IMAGE" != "none" ] && [ -n "$CURRENT_IMAGE" ]; then
+                echo "🔄 Restoring previous container with image: $CURRENT_IMAGE"
+                sudo docker run -d \
+                  --name $CONTAINER_NAME \
+                  --network mastra-test-network \
+                  --restart unless-stopped \
+                  -p $PORT:$PORT \
+                  -e PORT=$PORT \
+                  --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
+                  $CURRENT_IMAGE
+                echo "🔄 Rollback completed"
+              else
+                echo "❌ No previous image available for rollback (CURRENT_IMAGE: '$CURRENT_IMAGE')"
+              fi
+              exit 1
+            fi
+
+            echo "✅ Deployment verification completed successfully"
           EOF
