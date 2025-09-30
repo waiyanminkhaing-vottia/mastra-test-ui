@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
+import { withBasePath } from '@/lib/base-path';
 import {
   generateMessageId,
   generateResourceId,
@@ -455,7 +456,7 @@ const makeChatRequest = async (
   threadId: string,
   resourceId: string
 ): Promise<Response> => {
-  const response = await fetch('/api/chat', {
+  const response = await fetch(withBasePath('/api/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -8,6 +8,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { withBasePath } from '@/lib/base-path';
 import { UI_CONFIG } from '@/lib/config';
 import { useChatStore } from '@/store/chat-store';
 
@@ -180,7 +181,7 @@ export function ChatInterface() {
               >
                 <div className="text-center space-y-5">
                   <Image
-                    src="/brand.png"
+                    src={withBasePath('/brand.png')}
                     alt="Vottia AI Assistant Logo"
                     width="150"
                     height="30"
