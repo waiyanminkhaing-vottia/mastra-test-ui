@@ -270,9 +270,6 @@ jobs:
             CONTAINER_NAME="mastra-test-ui"
             PORT=3000
 
-            echo "Checking container status..."
-            sudo docker ps | grep $CONTAINER_NAME
-
             echo "Checking container logs..."
             sudo docker logs $CONTAINER_NAME --tail=20
 
@@ -284,10 +281,6 @@ jobs:
 
             HEALTH_URL="http://localhost:$PORT/api/health"
             echo "🔍 Using health check URL: $HEALTH_URL"
-
-            # Check container status
-            echo "🔍 Container status:"
-            sudo docker ps | grep $CONTAINER_NAME || echo "Container not found"
 
             # Wait for application to be ready
             for i in {1..30}; do
