@@ -67,7 +67,7 @@ jobs:
 
           # Clone/update repository with authentication
           BRANCH="${{ github.ref_name }}"
-          IMAGE_NAME="mastra-test-dashboard-${BRANCH}"
+          IMAGE_NAME="mastra-test-ui-${BRANCH}"
 
           echo "Deploying from branch: $BRANCH"
           echo "Image name: $IMAGE_NAME"
@@ -94,15 +94,15 @@ jobs:
           # Alternative: Set git config for URL rewriting
           $GIT_CMD config --global url."https://$GITHUB_TOKEN:x-oauth-basic@github.com/".insteadOf "https://github.com/"
 
-          if [ -d "/tmp/mastra-test-dashboard" ]; then
-            cd /tmp/mastra-test-dashboard
-            $GIT_CMD fetch "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-dashboard.git"
+          if [ -d "/tmp/mastra-test-ui" ]; then
+            cd /tmp/mastra-test-ui
+            $GIT_CMD fetch "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-ui.git"
             $GIT_CMD checkout $BRANCH
-            $GIT_CMD pull "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-dashboard.git" $BRANCH
+            $GIT_CMD pull "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-ui.git" $BRANCH
           else
             cd /tmp
-            $GIT_CMD clone -b $BRANCH "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-dashboard.git"
-            cd mastra-test-dashboard
+            $GIT_CMD clone -b $BRANCH "https://$GITHUB_TOKEN:x-oauth-basic@github.com/waiyanminkhaing-vottia/mastra-test-ui.git"
+            cd mastra-test-ui
           fi
 
           # Clean up credentials
@@ -124,14 +124,14 @@ jobs:
           fi
 
           # Copy environment file to deployment location
-          sudo mkdir -p /opt/mastra-test-dashboard
-          sudo cp ".env.$ENV_FILE" "/opt/mastra-test-dashboard/.env.$ENV_FILE"
+          sudo mkdir -p /opt/mastra-test-ui
+          sudo cp ".env.$ENV_FILE" "/opt/mastra-test-ui/.env.$ENV_FILE"
 
           # Verify copied file (without exposing contents)
           echo "🔍 Verifying copied file:"
-          if [ -f "/opt/mastra-test-dashboard/.env.$ENV_FILE" ]; then
+          if [ -f "/opt/mastra-test-ui/.env.$ENV_FILE" ]; then
             echo "✅ Environment file copied successfully"
-            echo "📄 File size: $(sudo wc -l < "/opt/mastra-test-dashboard/.env.$ENV_FILE") lines"
+            echo "📄 File size: $(sudo wc -l < "/opt/mastra-test-ui/.env.$ENV_FILE") lines"
           else
             echo "❌ Failed to copy environment file"
             exit 1
@@ -193,7 +193,7 @@ jobs:
             # Ensure Docker network exists
             sudo docker network create mastra-test-network --driver bridge 2>/dev/null || true
 
-            CONTAINER_NAME="mastra-test-dashboard"
+            CONTAINER_NAME="mastra-test-ui"
 
             # Store current image for rollback
             CURRENT_IMAGE=$(sudo docker inspect $CONTAINER_NAME --format='{{.Image}}' 2>/dev/null || echo "none")
@@ -209,7 +209,7 @@ jobs:
             PORT=3000
 
             # Create image name with branch
-            IMAGE_NAME="mastra-test-dashboard-${BRANCH}"
+            IMAGE_NAME="mastra-test-ui-${BRANCH}"
 
             echo "Using environment: $ENV_FILE"
             echo "Using branch: $BRANCH"
@@ -223,10 +223,10 @@ jobs:
 
             # Debug: Check environment file before deployment (safe variables only)
             echo "🔍 Environment file for container (non-sensitive vars only):"
-            sudo grep -E "^(LOG_LEVEL|NODE_ENV)" "/opt/mastra-test-dashboard/.env.$ENV_FILE" || echo "No safe variables found"
+            sudo grep -E "^(LOG_LEVEL|NODE_ENV)" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "No safe variables found"
 
             # Deploy container with environment-specific configuration
-            echo "🚀 Deploying dashboard with environment: $ENV_FILE on port: $PORT"
+            echo "🚀 Deploying UI with environment: $ENV_FILE on port: $PORT"
 
             if [ "$ENV_FILE" = "production" ]; then
               echo "🔒 Using production deployment (environment variables only)"
@@ -247,7 +247,7 @@ jobs:
                 --network mastra-test-network \
                 --restart unless-stopped \
                 -p $PORT:$PORT \
-                --env-file "/opt/mastra-test-dashboard/.env.$ENV_FILE" \
+                --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
                 -e NODE_ENV=production \
                 $REGISTRY_IP:5000/$IMAGE_NAME:latest
             fi
@@ -257,7 +257,7 @@ jobs:
             sudo docker exec $CONTAINER_NAME env | grep -E "^(NODE_ENV|MASTRA_SERVER_URL)" | sort || echo "No safe env vars found"
 
             # Clean up old images (keep running container image)
-            sudo docker images "*mastra-test-dashboard*" --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +3 | awk '{print $1}' | xargs -r sudo docker rmi || true
+            sudo docker images "*mastra-test-ui*" --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +3 | awk '{print $1}' | xargs -r sudo docker rmi || true
 
             echo "✅ Application deployed successfully"
           EOF
@@ -267,7 +267,7 @@ jobs:
           ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << 'EOF'
             echo "🔍 Verifying deployment..."
 
-            CONTAINER_NAME="mastra-test-dashboard"
+            CONTAINER_NAME="mastra-test-ui"
             PORT=3000
 
             echo "Checking container status..."
@@ -329,7 +329,7 @@ jobs:
                     --network mastra-test-network \
                     --restart unless-stopped \
                     -p $PORT:$PORT \
-                    --env-file "/opt/mastra-test-dashboard/.env.$ENV_FILE" \
+                    --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
                     -e NODE_ENV=production \
                     $CURRENT_IMAGE
                 fi
