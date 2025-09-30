@@ -137,10 +137,10 @@ jobs:
           # Set port and URLs based on service
           if [ "$SERVICE" = "fasthelp" ]; then
             PORT=3002
-            MASTRA_SERVER_URL="http://localhost:4002"
+            MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
           else
             PORT=3001
-            MASTRA_SERVER_URL="http://localhost:4001"
+            MASTRA_SERVER_URL="http://mastra-test:4001"
           fi
 
           # Copy environment file to deployment location
