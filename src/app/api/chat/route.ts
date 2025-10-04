@@ -10,9 +10,74 @@ import { logger } from '@/lib/logger';
 import { mastraClient } from '@/lib/mastra-client';
 import { validateChatRequest, validateRequestSize } from '@/lib/validation';
 
-/**
- * Creates a streaming response from the Mastra agent
- */
+function mapNetworkEventToClientEvent(chunk: unknown): unknown | null {
+  if (!chunk || typeof chunk !== 'object') return null;
+
+  const event = chunk as {
+    type: string;
+    payload?: {
+      type?: string;
+      payload?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+  };
+
+  if (!event.payload) return null;
+
+  switch (event.type) {
+    case 'routing-agent-start':
+      return { type: 'routing-start', payload: event.payload };
+
+    case 'routing-agent-end':
+      return { type: 'routing-end', payload: event.payload };
+
+    case 'agent-execution-start':
+      return { type: 'agent-start', payload: event.payload };
+
+    case 'agent-execution-end':
+      return { type: 'agent-end', payload: event.payload };
+
+    case 'agent-execution-event-text-start':
+      return event.payload.payload
+        ? { type: 'text-start', payload: event.payload.payload }
+        : null;
+
+    case 'agent-execution-event-text-delta':
+      return event.payload.payload
+        ? { type: 'text-delta', payload: event.payload.payload }
+        : null;
+
+    case 'agent-execution-event-text-end':
+      return event.payload.payload
+        ? { type: 'text-end', payload: event.payload.payload }
+        : null;
+
+    case 'agent-execution-event-tool-call-input-streaming-start':
+      return event.payload.payload
+        ? {
+            type: 'tool-call-input-streaming-start',
+            payload: event.payload.payload,
+          }
+        : null;
+
+    case 'agent-execution-event-tool-call':
+      return event.payload.payload
+        ? { type: 'tool-call', payload: event.payload.payload }
+        : null;
+
+    case 'agent-execution-event-tool-result':
+      return event.payload.payload
+        ? { type: 'tool-result', payload: event.payload.payload }
+        : null;
+
+    case 'network-execution-event-step-finish':
+      return { type: 'finish', payload: event.payload };
+
+    default:
+      return null;
+  }
+}
+
 function createStreamingResponse(
   agentResponse: {
     processDataStream: (options: {
@@ -27,15 +92,15 @@ function createStreamingResponse(
       try {
         await agentResponse.processDataStream({
           onChunk: async (chunk: unknown) => {
-            // Validate chunk data before processing
-            if (chunk && typeof chunk === 'object') {
-              const data = `data: ${JSON.stringify(chunk)}\n\n`;
+            const clientEvent = mapNetworkEventToClientEvent(chunk);
+
+            if (clientEvent) {
+              const data = `data: ${JSON.stringify(clientEvent)}\n\n`;
               controller.enqueue(new TextEncoder().encode(data));
             }
           },
         });
 
-        // Send done signal
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
         controller.close();
       } catch (error) {
@@ -63,8 +128,65 @@ function createStreamingResponse(
   });
 }
 
+const isNetworkError = (error: unknown): boolean => {
+  return (
+    error instanceof Error &&
+    (error.message.includes('fetch') ||
+      error.message.includes('ECONNREFUSED') ||
+      error.message.includes('ERR_NETWORK') ||
+      error.name === 'TypeError')
+  );
+};
+
+const handleNetworkError = (error: unknown) => {
+  logger.error(
+    { error, mastraUrl: process.env.MASTRA_SERVER_URL },
+    'Mastra server connection failed'
+  );
+  return corsJsonResponse(
+    {
+      error: 'Mastra server connection failed',
+      message:
+        'Unable to connect to the Mastra AI server. Please ensure the server is running.',
+      details: `Server URL: ${process.env.MASTRA_SERVER_URL}`,
+    },
+    { status: 503 }
+  );
+};
+
+const handleValidationError = (error: z.ZodError) => {
+  const firstError = error.errors[0];
+  return corsJsonResponse(
+    {
+      error: 'Validation failed',
+      message: firstError.message,
+      path: firstError.path.join('.'),
+    },
+    { status: 400 }
+  );
+};
+
+const handleGenericError = (error: unknown) => {
+  logger.error(
+    {
+      error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+    },
+    'Chat API error'
+  );
+
+  return corsJsonResponse(
+    {
+      error: 'Failed to process chat request',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    },
+    { status: 500 }
+  );
+};
+
 /**
- * Handles OPTIONS requests for CORS preflight
+ * Handles CORS preflight OPTIONS requests
  */
 export async function OPTIONS() {
   return handleCORSPreflight();
@@ -74,24 +196,27 @@ export async function OPTIONS() {
  * Handles POST requests to stream chat responses from Mastra agents
  */
 export async function POST(request: NextRequest) {
-  // Check CORS origin
   if (!isOriginAllowed(request)) {
     return corsJsonResponse({ error: 'Origin not allowed' }, { status: 403 });
   }
 
   try {
-    // Validate request size
     validateRequestSize(request.headers);
 
-    // Parse and validate request body
     const rawBody = await request.json();
-    const { messages, threadId, resourceId, agentId } =
-      validateChatRequest(rawBody);
+    const { messages, threadId, resourceId } = validateChatRequest(rawBody);
+
+    const agentId = process.env.MAIN_AGENT_NAME;
+    if (!agentId) {
+      throw new Error('MAIN_AGENT_NAME environment variable is not set');
+    }
 
     const agent = mastraClient.getAgent(agentId);
 
-    // Use streamVNext with correct signature - messages first, options second
-    const response = await agent.streamVNext(messages as never, {
+    const response = await agent.network({
+      messages: messages as unknown as Parameters<
+        typeof agent.network
+      >[0]['messages'],
       memory:
         threadId && resourceId
           ? {
@@ -111,55 +236,20 @@ export async function POST(request: NextRequest) {
       threadId
     );
   } catch (error) {
-    // Handle network/connection errors to Mastra server
-    if (
-      error instanceof Error &&
-      (error.message.includes('fetch') ||
-        error.message.includes('ECONNREFUSED') ||
-        error.message.includes('ERR_NETWORK') ||
-        error.name === 'TypeError')
-    ) {
-      logger.error(
-        { error, mastraUrl: process.env.MASTRA_SERVER_URL },
-        'Mastra server connection failed'
-      );
-      return corsJsonResponse(
-        {
-          error: 'Mastra server connection failed',
-          message:
-            'Unable to connect to the Mastra AI server. Please ensure the server is running.',
-          details: `Server URL: ${process.env.MASTRA_SERVER_URL}`,
-        },
-        { status: 503 }
-      );
+    if (isNetworkError(error)) {
+      return handleNetworkError(error);
     }
-    // Handle Zod validation errors
+
     if (error instanceof z.ZodError) {
-      const firstError = error.errors[0];
-      return corsJsonResponse(
-        {
-          error: 'Validation failed',
-          message: firstError.message,
-          path: firstError.path.join('.'),
-        },
-        { status: 400 }
-      );
+      return handleValidationError(error);
     }
 
-    logger.error({ error }, 'Chat API error');
-
-    return corsJsonResponse(
-      {
-        error: 'Failed to process chat request',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
+    return handleGenericError(error);
   }
 }
 
 /**
- * Handles GET requests to check chat API status
+ * Handles GET requests to check API status
  */
 export async function GET() {
   return corsJsonResponse({ message: 'Chat API is running' }, { status: 200 });

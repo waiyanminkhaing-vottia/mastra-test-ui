@@ -1,0 +1,80 @@
+{
+  "chat": {
+    "title": "Chat",
+    "inputPlaceholder": "Ask anything...",
+    "send": "Send",
+    "thinking": "Thinking",
+    "callingTool": "Calling",
+    "error": "Error",
+    "retry": "Retry",
+    "newChat": "New Chat",
+    "selectAgent": "Select an agent",
+    "welcome": "Repair Assistance AI Agent",
+    "stopGeneration": "Stop generation",
+    "sendMessage": "Send message (Enter)",
+    "newLine": "New line (Shift + Enter)",
+    "sendInstructions": "Press Enter to send, Shift + Enter for new line",
+    "unavailable": "Chat input unavailable. Please refresh the page.",
+    "skipToMessages": "Skip to chat messages",
+    "skipToInput": "Skip to message input"
+  },
+  "toolActions": {
+    "get": "Searching",
+    "fetch": "Fetching",
+    "retrieve": "Retrieving",
+    "search": "Searching",
+    "find": "Finding",
+    "list": "Listing",
+    "read": "Reading",
+    "create": "Creating",
+    "add": "Adding",
+    "insert": "Inserting",
+    "update": "Updating",
+    "edit": "Editing",
+    "modify": "Modifying",
+    "delete": "Deleting",
+    "remove": "Removing",
+    "send": "Sending",
+    "post": "Posting",
+    "put": "Uploading",
+    "upload": "Uploading",
+    "download": "Downloading",
+    "execute": "Executing",
+    "run": "Running",
+    "process": "Processing",
+    "calculate": "Calculating",
+    "compute": "Computing",
+    "analyze": "Analyzing",
+    "validate": "Validating",
+    "check": "Checking",
+    "verify": "Verifying",
+    "default": "Processing"
+  },
+  "debug": {
+    "enable": "Enable debug mode",
+    "disable": "Disable debug mode",
+    "disabledWhileLoading": "Debug mode disabled while loading",
+    "modeOn": "Debug mode: ON - showing all messages",
+    "modeOff": "Debug mode: OFF - showing user/bot messages only"
+  },
+  "tool": {
+    "toggle": "Toggle",
+    "arguments": "Tool Arguments",
+    "result": "Tool Result"
+  },
+  "routing": {
+    "prompt": "Prompt",
+    "selectionReason": "Selection Reason"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "somethingWentWrong": "Something went wrong"
+  }
+}

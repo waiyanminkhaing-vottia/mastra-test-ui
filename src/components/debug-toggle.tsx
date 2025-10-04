@@ -8,13 +8,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useLanguage } from '@/contexts/language-context';
 import { useChatStore } from '@/store/chat-store';
 
 /**
  * Debug mode toggle component that controls message visibility
  */
 export function DebugToggle() {
-  const { debugMode, isMainStreaming, toggleDebugMode } = useChatStore();
+  const { debugMode, isLoading, toggleDebugMode } = useChatStore();
+  const { t } = useLanguage();
 
   return (
     <Tooltip>
@@ -23,9 +25,9 @@ export function DebugToggle() {
           variant={debugMode ? 'default' : 'outline'}
           size="sm"
           onClick={toggleDebugMode}
-          disabled={isMainStreaming}
+          disabled={isLoading}
           className="p-2"
-          aria-label={debugMode ? 'Disable debug mode' : 'Enable debug mode'}
+          aria-label={debugMode ? t('debug.disable') : t('debug.enable')}
         >
           {debugMode ? (
             <Bug className="h-4 w-4" />
@@ -36,11 +38,11 @@ export function DebugToggle() {
       </TooltipTrigger>
       <TooltipContent>
         <p>
-          {isMainStreaming
-            ? 'Debug mode disabled during streaming'
+          {isLoading
+            ? t('debug.disabledWhileLoading')
             : debugMode
-              ? 'Debug mode: ON - showing all messages'
-              : 'Debug mode: OFF - showing user/bot messages only'}
+              ? t('debug.modeOn')
+              : t('debug.modeOff')}
         </p>
       </TooltipContent>
     </Tooltip>

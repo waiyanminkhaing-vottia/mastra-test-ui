@@ -1,0 +1,80 @@
+{
+  "chat": {
+    "title": "チャット",
+    "inputPlaceholder": "何でも聞いてください...",
+    "send": "送信",
+    "thinking": "考え中",
+    "callingTool": "呼び出し中",
+    "error": "エラー",
+    "retry": "再試行",
+    "newChat": "新しいチャット",
+    "selectAgent": "エージェントを選択",
+    "welcome": "修理受付AIエージェントです。",
+    "stopGeneration": "生成を停止",
+    "sendMessage": "メッセージを送信（Enter）",
+    "newLine": "改行（Shift + Enter）",
+    "sendInstructions": "Enterで送信、Shift + Enterで改行",
+    "unavailable": "チャット入力が利用できません。ページを更新してください。",
+    "skipToMessages": "チャットメッセージへスキップ",
+    "skipToInput": "メッセージ入力へスキップ"
+  },
+  "toolActions": {
+    "get": "検索中",
+    "fetch": "取得中",
+    "retrieve": "取得中",
+    "search": "検索中",
+    "find": "検索中",
+    "list": "一覧表示中",
+    "read": "読み込み中",
+    "create": "作成中",
+    "add": "追加中",
+    "insert": "挿入中",
+    "update": "更新中",
+    "edit": "編集中",
+    "modify": "変更中",
+    "delete": "削除中",
+    "remove": "削除中",
+    "send": "送信中",
+    "post": "投稿中",
+    "put": "アップロード中",
+    "upload": "アップロード中",
+    "download": "ダウンロード中",
+    "execute": "実行中",
+    "run": "実行中",
+    "process": "処理中",
+    "calculate": "計算中",
+    "compute": "計算中",
+    "analyze": "分析中",
+    "validate": "検証中",
+    "check": "確認中",
+    "verify": "検証中",
+    "default": "処理中"
+  },
+  "debug": {
+    "enable": "デバッグモードを有効化",
+    "disable": "デバッグモードを無効化",
+    "disabledWhileLoading": "読み込み中はデバッグモードが無効です",
+    "modeOn": "デバッグモード：ON - すべてのメッセージを表示",
+    "modeOff": "デバッグモード：OFF - ユーザー/ボットメッセージのみ表示"
+  },
+  "tool": {
+    "toggle": "切り替え",
+    "arguments": "ツール引数",
+    "result": "ツール結果"
+  },
+  "routing": {
+    "prompt": "プロンプト",
+    "selectionReason": "選択理由"
+  },
+  "common": {
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "save": "保存",
+    "delete": "削除",
+    "edit": "編集",
+    "somethingWentWrong": "問題が発生しました"
+  }
+}
