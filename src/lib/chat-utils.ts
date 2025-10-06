@@ -9,7 +9,7 @@ const generateUniqueId = (): string => {
  * Generates a unique message ID with role prefix
  */
 export const generateMessageId = (
-  role: 'user' | 'assistant' | 'tool' | 'error' | 'routing'
+  role: 'user' | 'assistant' | 'tool' | 'error' | 'routing' | 'restream'
 ) => `${role}-${generateUniqueId()}`;
 
 /**
@@ -34,8 +34,19 @@ export const extractToolAction = (toolName: string): string => {
   // Convert to lowercase
   const normalized = toolName.toLowerCase();
 
+  // Special cases - tools that should show as "thinking" instead of action
+  const thinkingTools = ['updateworkingmemory', 'workingmemory'];
+  if (thinkingTools.some(tool => normalized.includes(tool))) {
+    return 'thinking';
+  }
+
   // Common action keywords to look for (in order of priority)
+  // Multi-word keywords first to avoid partial matches
   const actionKeywords = [
+    'lookup',
+    'generate',
+    'upload',
+    'download',
     'get',
     'fetch',
     'retrieve',
@@ -54,8 +65,6 @@ export const extractToolAction = (toolName: string): string => {
     'send',
     'post',
     'put',
-    'upload',
-    'download',
     'execute',
     'run',
     'process',
@@ -68,8 +77,15 @@ export const extractToolAction = (toolName: string): string => {
   ];
 
   // Try to find action keyword in the tool name
+  // Check for whole word matches with underscores
   for (const keyword of actionKeywords) {
-    if (normalized.includes(keyword)) {
+    // Match if keyword appears:
+    // - At start: lookup_customer
+    // - After underscore: customer_lookup
+    // - As whole word between underscores: get_customer_data
+    const regex = new RegExp(`(?:^|_)${keyword}(?:_|$)`, 'i');
+
+    if (regex.test(normalized)) {
       return keyword;
     }
   }

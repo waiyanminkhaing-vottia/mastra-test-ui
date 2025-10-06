@@ -10,9 +10,13 @@ import { logger } from '@/lib/logger';
 import { mastraClient } from '@/lib/mastra-client';
 import { validateChatRequest, validateRequestSize } from '@/lib/validation';
 
-function mapNetworkEventToClientEvent(chunk: unknown): unknown | null {
-  if (!chunk || typeof chunk !== 'object') return null;
+// Helper to create event with nested payload
+const createNestedPayloadEvent = (
+  type: string,
+  payload?: Record<string, unknown>
+) => (payload ? { type, payload } : null);
 
+function mapNetworkEventToClientEvent(chunk: unknown): unknown | null {
   const event = chunk as {
     type: string;
     payload?: {
@@ -24,82 +28,171 @@ function mapNetworkEventToClientEvent(chunk: unknown): unknown | null {
 
   if (!event.payload) return null;
 
-  switch (event.type) {
-    case 'routing-agent-start':
-      return { type: 'routing-start', payload: event.payload };
+  // Direct payload mapping
+  const directPayloadEvents: Record<string, string> = {
+    'routing-agent-start': 'routing-start',
+    'routing-agent-end': 'routing-end',
+    'agent-execution-start': 'agent-start',
+    'agent-execution-end': 'agent-end',
+    'network-execution-event-step-finish': 'finish',
+  };
 
-    case 'routing-agent-end':
-      return { type: 'routing-end', payload: event.payload };
+  if (directPayloadEvents[event.type]) {
+    return { type: directPayloadEvents[event.type], payload: event.payload };
+  }
 
-    case 'agent-execution-start':
-      return { type: 'agent-start', payload: event.payload };
+  // Nested payload mapping
+  const nestedPayloadEvents: Record<string, string> = {
+    'agent-execution-event-text-start': 'text-start',
+    'agent-execution-event-text-delta': 'text-delta',
+    'agent-execution-event-text-end': 'text-end',
+    'agent-execution-event-tool-call-input-streaming-start':
+      'tool-call-input-streaming-start',
+    'agent-execution-event-tool-call': 'tool-call',
+    'agent-execution-event-tool-result': 'tool-result',
+  };
 
-    case 'agent-execution-end':
-      return { type: 'agent-end', payload: event.payload };
+  if (nestedPayloadEvents[event.type]) {
+    return createNestedPayloadEvent(
+      nestedPayloadEvents[event.type],
+      event.payload.payload
+    );
+  }
 
-    case 'agent-execution-event-text-start':
-      return event.payload.payload
-        ? { type: 'text-start', payload: event.payload.payload }
-        : null;
+  // Error events
+  if (
+    event.type === 'agent-execution-event-error' ||
+    event.type === 'network-execution-event-error'
+  ) {
+    return event.payload.payload
+      ? { type: 'error', payload: event.payload.payload }
+      : { type: 'error', payload: event.payload };
+  }
 
-    case 'agent-execution-event-text-delta':
-      return event.payload.payload
-        ? { type: 'text-delta', payload: event.payload.payload }
-        : null;
+  return null;
+}
 
-    case 'agent-execution-event-text-end':
-      return event.payload.payload
-        ? { type: 'text-end', payload: event.payload.payload }
-        : null;
+async function streamAgentResponse(
+  agent: ReturnType<typeof mastraClient.getAgent>,
+  messages: unknown[],
+  threadId: string | undefined,
+  resourceId: string | undefined,
+  controller: ReadableStreamDefaultController,
+  useNetworkMapper: boolean
+): Promise<void> {
+  const maxRetries = parseInt(process.env.MAX_RESTREAM_RETRIES || '3', 10);
+  let retryCount = 0;
+  let finalPreviousLastEventType: string | null = null;
 
-    case 'agent-execution-event-tool-call-input-streaming-start':
-      return event.payload.payload
+  while (retryCount < maxRetries) {
+    let previousLastEventType: string | null = null;
+    let lastEventType: string | null = null;
+
+    const response = await agent.stream({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: messages as any,
+      ...(threadId && resourceId
         ? {
-            type: 'tool-call-input-streaming-start',
-            payload: event.payload.payload,
+            memory: {
+              thread: threadId,
+              resource: resourceId,
+            },
           }
-        : null;
+        : {}),
+    });
 
-    case 'agent-execution-event-tool-call':
-      return event.payload.payload
-        ? { type: 'tool-call', payload: event.payload.payload }
-        : null;
+    await response.processDataStream({
+      onChunk: async (chunk: unknown) => {
+        if (!chunk || typeof chunk !== 'object') return;
 
-    case 'agent-execution-event-tool-result':
-      return event.payload.payload
-        ? { type: 'tool-result', payload: event.payload.payload }
-        : null;
+        const clientEvent = useNetworkMapper
+          ? mapNetworkEventToClientEvent(chunk)
+          : chunk;
 
-    case 'network-execution-event-step-finish':
-      return { type: 'finish', payload: event.payload };
+        if (clientEvent) {
+          const eventObj = clientEvent as { type?: string };
+          if (eventObj.type) {
+            previousLastEventType = lastEventType;
+            lastEventType = eventObj.type;
+          }
 
-    default:
-      return null;
+          // Don't send error events to client during streaming
+          // They will be handled after max retries check
+          if (eventObj.type === 'error') {
+            const errorPayload =
+              'payload' in eventObj
+                ? (eventObj as { payload: unknown }).payload
+                : undefined;
+            logger.warn(
+              { eventType: eventObj.type, payload: errorPayload },
+              'Error event received during stream, not sending to client'
+            );
+          } else {
+            const data = `data: ${JSON.stringify(clientEvent)}\n\n`;
+            controller.enqueue(new TextEncoder().encode(data));
+          }
+        }
+      },
+    });
+
+    // Check if we need to restream
+    // lastEventType should be 'step-finish', but we check if previousLastEventType was 'text-end'
+    if (previousLastEventType !== 'text-end') {
+      finalPreviousLastEventType = previousLastEventType;
+      retryCount++;
+      logger.warn(
+        { lastEventType, previousLastEventType, retryCount, maxRetries },
+        'Stream ended without text-end before finish, restreaming'
+      );
+
+      const restreamData = `data: ${JSON.stringify({
+        type: 'restream-needed',
+        payload: { lastEventType, previousLastEventType, retryCount },
+      })}\n\n`;
+      controller.enqueue(new TextEncoder().encode(restreamData));
+
+      // Add continuation message and retry
+      messages.push({ role: 'user', content: 'continue' });
+    } else {
+      // Successfully completed
+      break;
+    }
+  }
+
+  // After all retries, if previousLastEventType is still error, send error to client
+  if (retryCount >= maxRetries && finalPreviousLastEventType === 'error') {
+    logger.error(
+      { retryCount, maxRetries, finalPreviousLastEventType },
+      'Max restream retries reached with error'
+    );
+
+    const errorData = `data: ${JSON.stringify({
+      type: 'error',
+      payload: { error: 'Stream processing failed after retries' },
+    })}\n\n`;
+    controller.enqueue(new TextEncoder().encode(errorData));
   }
 }
 
 function createStreamingResponse(
-  agentResponse: {
-    processDataStream: (options: {
-      onChunk: (chunk: unknown) => Promise<void>;
-    }) => Promise<void>;
-  },
+  agent: ReturnType<typeof mastraClient.getAgent>,
+  messages: unknown[],
   agentId: string,
-  threadId?: string
+  threadId?: string,
+  resourceId?: string,
+  useNetworkMapper: boolean = false
 ): Response {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        await agentResponse.processDataStream({
-          onChunk: async (chunk: unknown) => {
-            const clientEvent = mapNetworkEventToClientEvent(chunk);
-
-            if (clientEvent) {
-              const data = `data: ${JSON.stringify(clientEvent)}\n\n`;
-              controller.enqueue(new TextEncoder().encode(data));
-            }
-          },
-        });
+        await streamAgentResponse(
+          agent,
+          messages,
+          threadId,
+          resourceId,
+          controller,
+          useNetworkMapper
+        );
 
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
         controller.close();
@@ -154,8 +247,8 @@ const handleNetworkError = (error: unknown) => {
   );
 };
 
-const handleValidationError = (error: z.ZodError) => {
-  const firstError = error.errors[0];
+const handleValidationError = (error: z.ZodError<unknown>) => {
+  const firstError = error.issues[0];
   return corsJsonResponse(
     {
       error: 'Validation failed',
@@ -213,27 +306,13 @@ export async function POST(request: NextRequest) {
 
     const agent = mastraClient.getAgent(agentId);
 
-    const response = await agent.network({
-      messages: messages as unknown as Parameters<
-        typeof agent.network
-      >[0]['messages'],
-      memory:
-        threadId && resourceId
-          ? {
-              thread: threadId,
-              resource: resourceId,
-            }
-          : undefined,
-    });
-
     return createStreamingResponse(
-      response as {
-        processDataStream: (options: {
-          onChunk: (chunk: unknown) => Promise<void>;
-        }) => Promise<void>;
-      },
+      agent,
+      messages,
       agentId,
-      threadId
+      threadId,
+      resourceId,
+      false // using agent.stream, not network mapper
     );
   } catch (error) {
     if (isNetworkError(error)) {
