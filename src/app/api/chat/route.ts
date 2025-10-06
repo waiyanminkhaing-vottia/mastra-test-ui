@@ -197,7 +197,17 @@ function createStreamingResponse(
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
         controller.close();
       } catch (error) {
-        logger.error({ error, agentId, threadId }, 'Stream processing error');
+        logger.error(
+          {
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : undefined,
+            errorName: error instanceof Error ? error.name : typeof error,
+            agentId,
+            threadId,
+          },
+          'Stream processing error'
+        );
 
         const errorMessage =
           error instanceof Error ? error.message : 'Stream processing failed';
