@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, Bot } from 'lucide-react';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -34,7 +34,7 @@ export function ChatInterface() {
     stopGeneration,
     initializeSession,
   } = useChatStore();
-  const { t } = useLanguage();
+  const { t, isLoading: languageLoading } = useLanguage();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const hasUserScrolledUp = useRef(false);
@@ -138,6 +138,11 @@ export function ChatInterface() {
     }
   }, [isMainStreaming, scrollToBottom]);
 
+  // Return null while language is loading to prevent flash
+  if (languageLoading) {
+    return null;
+  }
+
   return (
     <TooltipProvider>
       <div className="flex flex-col h-screen bg-background">
@@ -210,27 +215,37 @@ export function ChatInterface() {
             )}
 
             {isMainStreaming && (
-              <div className="flex items-center gap-1 mb-4">
-                <span className="text-sm text-muted-foreground animate-pulse">
-                  {currentToolName
-                    ? t(
-                        `toolActions.${extractToolAction(currentToolName)}` as 'toolActions.default'
-                      )
-                    : t('chat.thinking')}
-                </span>
-                <span className="flex gap-1 items-end">
-                  {UI_CONFIG.THINKING_DOT_DELAYS.map(delay => (
-                    <span
-                      key={delay}
-                      className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
-                      style={{
-                        animationDelay: delay,
-                        animationDuration:
-                          UI_CONFIG.THINKING_DOT_ANIMATION_DURATION,
-                      }}
-                    />
-                  ))}
-                </span>
+              <div className="flex items-start gap-3 mb-4">
+                {/* Bot icon */}
+                <div className="flex-shrink-0 mt-1">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                </div>
+
+                {/* Streaming text and dots */}
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-muted-foreground animate-pulse">
+                    {currentToolName
+                      ? t(
+                          `toolActions.${extractToolAction(currentToolName)}` as 'toolActions.default'
+                        )
+                      : t('chat.thinking')}
+                  </span>
+                  <span className="flex gap-1 items-end">
+                    {UI_CONFIG.THINKING_DOT_DELAYS.map(delay => (
+                      <span
+                        key={delay}
+                        className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
+                        style={{
+                          animationDelay: delay,
+                          animationDuration:
+                            UI_CONFIG.THINKING_DOT_ANIMATION_DURATION,
+                        }}
+                      />
+                    ))}
+                  </span>
+                </div>
               </div>
             )}
           </div>
