@@ -465,7 +465,7 @@ const processSSEDataLine = (
     }
 
     return updatedMessageId;
-  } catch (parseError) {
+  } catch {
     return currentTextMessageId;
   }
 };
@@ -546,7 +546,7 @@ const processStreamResponse = async (
     // Ensure reader is properly closed to prevent memory leaks
     try {
       await reader.cancel();
-    } catch (error) {
+    } catch {
       // Silently handle reader close errors
     }
   }
