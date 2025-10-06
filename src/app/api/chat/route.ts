@@ -161,6 +161,25 @@ async function streamAgentResponse(
       'Stream completed'
     );
 
+    // If stream completed with 0 chunks, the backend likely failed
+    if (chunkCount === 0) {
+      logger.error(
+        { retryCount, threadId, resourceId },
+        'Stream completed with 0 chunks - backend may have failed'
+      );
+
+      // Don't retry if we get empty streams - it's a backend error
+      const errorData = `data: ${JSON.stringify({
+        type: 'error',
+        payload: {
+          error:
+            'Backend service failed to process request. Please check backend logs for details.',
+        },
+      })}\n\n`;
+      controller.enqueue(new TextEncoder().encode(errorData));
+      break;
+    }
+
     // Check if we need to restream
     // lastEventType should be 'step-finish', but we check if previousLastEventType was 'text-end'
     if (previousLastEventType !== 'text-end') {
