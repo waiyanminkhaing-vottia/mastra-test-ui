@@ -7,10 +7,12 @@ import {
   generateResourceId,
   generateThreadId,
 } from '@/lib/chat-utils';
-import { logger } from '@/lib/logger';
 import type {
   BotMessage,
+  ErrorMessage,
   MessageTypes,
+  RestreamMessage,
+  RoutingMessage,
   StreamChunk,
   ToolCallMessage,
   UserMessage,
@@ -20,12 +22,25 @@ interface ChatState {
   messages: MessageTypes[];
   isLoading: boolean;
   isMainStreaming: boolean;
+  currentToolName: string | null;
   threadId: string;
   resourceId: string;
   debugMode: boolean;
+  abortController: AbortController | null;
+  currentUserMessage: string | null; // Store the current user message for error handling
 }
 
-// Helper function to check if tool result has error
+interface ChatActions {
+  addMessage: (message: MessageTypes) => void;
+  updateMessage: (id: string, updateMessage: MessageTypes) => void;
+  sendMessage: (content: string, skipUserMessage?: boolean) => Promise<void>;
+  resendMessage: (content: string) => Promise<void>;
+  stopGeneration: () => void;
+  clearMessages: () => void;
+  initializeSession: () => void;
+  toggleDebugMode: () => void;
+}
+
 const hasToolError = (result: unknown): boolean => {
   if (!result || typeof result !== 'object') return false;
   const r = result as Record<string, unknown>;
@@ -38,23 +53,6 @@ const hasToolError = (result: unknown): boolean => {
   );
 };
 
-interface ChatActions {
-  addMessage: (message: MessageTypes) => void;
-  updateMessage: (id: string, updateMessage: MessageTypes) => void;
-  sendMessage: (content: string) => Promise<void>;
-  stopGeneration: () => void;
-  clearMessages: () => void;
-  initializeSession: () => void;
-  toggleDebugMode: () => void;
-}
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-/**
- * Updates a specific message by ID using an updater function
- */
 const updateMessageById = (
   messageId: string,
   updater: (msg: MessageTypes) => MessageTypes,
@@ -68,48 +66,55 @@ const updateMessageById = (
   }));
 };
 
-// =============================================================================
-// SMOOTH STREAMING IMPLEMENTATION
-// =============================================================================
-
-// Batching system for smooth text streaming
-const pendingTextUpdates = new Map<string, string>();
-let updateScheduled = false;
-
 /**
- * Flushes all pending text updates to the store
+ * Batches text updates to reduce re-renders during streaming.
+ * Uses a WeakMap-like approach through the store to prevent memory leaks.
  */
-const flushTextUpdates = (
-  set: (state: (state: ChatStore) => ChatStore) => void
-) => {
-  if (pendingTextUpdates.size === 0) return;
+class TextUpdateBatcher {
+  private updates = new Map<string, string>();
+  private scheduled = false;
 
-  const updates = new Map(pendingTextUpdates);
-  pendingTextUpdates.clear();
-  updateScheduled = false;
+  add(messageId: string, text: string): void {
+    const existing = this.updates.get(messageId) || '';
+    this.updates.set(messageId, existing + text);
+  }
 
-  set(state => ({
-    ...state,
-    messages: state.messages.map(msg => {
-      const pendingText = updates.get(msg.id);
-      if (pendingText && 'content' in msg) {
-        return {
-          ...msg,
-          content: msg.content + pendingText,
-        };
-      }
-      return msg;
-    }),
-  }));
-};
+  scheduleFlush(set: (state: (state: ChatStore) => ChatStore) => void): void {
+    if (!this.scheduled) {
+      this.scheduled = true;
+      requestAnimationFrame(() => this.flush(set));
+    }
+  }
 
-// =============================================================================
-// STREAM HANDLERS
-// =============================================================================
+  flush(set: (state: (state: ChatStore) => ChatStore) => void): void {
+    if (this.updates.size === 0) return;
 
-/**
- * Handles the start of a text stream by creating a new bot message
- */
+    const updates = new Map(this.updates);
+    this.clear();
+
+    set(state => ({
+      ...state,
+      messages: state.messages.map(msg => {
+        const pendingText = updates.get(msg.id);
+        if (pendingText && 'content' in msg) {
+          return {
+            ...msg,
+            content: msg.content + pendingText,
+          };
+        }
+        return msg;
+      }),
+    }));
+  }
+
+  clear(): void {
+    this.updates.clear();
+    this.scheduled = false;
+  }
+}
+
+const textUpdateBatcher = new TextUpdateBatcher();
+
 const handleTextStart = (
   _streamChunk: StreamChunk,
   set: (state: (state: ChatStore) => ChatStore) => void
@@ -132,41 +137,23 @@ const handleTextStart = (
   return currentTextMessageId;
 };
 
-/**
- * Handles text deltas by batching updates for smooth streaming
- */
 const handleTextDelta = (
   streamChunk: StreamChunk,
   currentTextMessageId: string | null,
   set: (state: (state: ChatStore) => ChatStore) => void
 ): void => {
   if (streamChunk.payload.text && currentTextMessageId) {
-    const newContent = streamChunk.payload.text;
-
-    // Accumulate text for batched updates
-    const existing = pendingTextUpdates.get(currentTextMessageId) || '';
-    pendingTextUpdates.set(currentTextMessageId, existing + newContent);
-
-    // Schedule update on next animation frame for smooth rendering
-    if (!updateScheduled) {
-      updateScheduled = true;
-      requestAnimationFrame(() => flushTextUpdates(set));
-    }
+    textUpdateBatcher.add(currentTextMessageId, streamChunk.payload.text);
+    textUpdateBatcher.scheduleFlush(set);
   }
 };
 
-/**
- * Handles the end of text streaming
- */
 const handleTextEnd = (
   currentTextMessageId: string | null,
   set: (state: (state: ChatStore) => ChatStore) => void
 ): void => {
   if (currentTextMessageId) {
-    // Flush any pending text updates immediately
-    flushTextUpdates(set);
-
-    // Mark message as no longer streaming
+    textUpdateBatcher.flush(set);
     updateMessageById(
       currentTextMessageId,
       msg => ({ ...msg, isStreaming: false }),
@@ -176,13 +163,6 @@ const handleTextEnd = (
   }
 };
 
-// =============================================================================
-// TOOL HANDLERS
-// =============================================================================
-
-/**
- * Handles the start of a tool call
- */
 const handleToolCallStart = (
   streamChunk: StreamChunk,
   set: (state: (state: ChatStore) => ChatStore) => void,
@@ -190,10 +170,11 @@ const handleToolCallStart = (
 ): string => {
   const toolCallId =
     streamChunk.payload.toolCallId ?? generateMessageId('tool');
+  const toolName = streamChunk.payload.toolName || 'Unknown Tool Name';
   const toolCallMessage: ToolCallMessage = {
     id: toolCallId,
     type: 'tool',
-    name: streamChunk.payload.toolName || 'Unknown Tool Name',
+    name: toolName,
     timestamp: new Date(),
     status: 'start',
   };
@@ -202,17 +183,13 @@ const handleToolCallStart = (
   set(state => ({
     ...state,
     messages: [...state.messages, toolCallMessage],
-    // In debug mode, don't change isMainStreaming state for tools
-    // In normal mode, keep isMainStreaming true for better UX
     isMainStreaming: currentState.debugMode ? false : true,
+    currentToolName: currentState.debugMode ? null : toolName,
   }));
 
   return toolCallId;
 };
 
-/**
- * Handles tool call execution
- */
 const handleToolCall = (
   streamChunk: StreamChunk,
   currentTextMessageId: string | null,
@@ -237,14 +214,13 @@ const handleToolResult = (
   streamChunk: StreamChunk,
   currentTextMessageId: string | null,
   set: (state: (state: ChatStore) => ChatStore) => void,
-  get: () => ChatStore
+  _get: () => ChatStore
 ): string | null => {
   const resultToolCallId: string | null =
     streamChunk.payload.toolCallId || currentTextMessageId;
   if (resultToolCallId) {
     const result = streamChunk.payload.result;
     const hasError = hasToolError(result);
-    get(); // Access state for potential future use
 
     set(state => ({
       ...state,
@@ -257,13 +233,11 @@ const handleToolResult = (
             }
           : msg
       ),
-      // In debug mode, set to true after tool result
-      // In normal mode, keep isMainStreaming true
       isMainStreaming: true,
+      currentToolName: null,
     }));
   }
 
-  // Reset currentTextMessageId only if we used it as fallback
   if (
     !streamChunk.payload.toolCallId &&
     currentTextMessageId === resultToolCallId
@@ -273,12 +247,76 @@ const handleToolResult = (
   return currentTextMessageId;
 };
 
-// =============================================================================
-// STREAM PROCESSING
-// =============================================================================
+const handleRoutingStart = (
+  streamChunk: StreamChunk,
+  set: (state: (state: ChatStore) => ChatStore) => void,
+  get: () => ChatStore
+): string | null => {
+  const inputData = streamChunk.payload.inputData as
+    | Record<string, unknown>
+    | undefined;
+  const primitiveIdFromInput = inputData?.primitiveId as string | undefined;
+
+  const routingMessageId = generateMessageId('routing');
+  const routingMessage: RoutingMessage = {
+    id: routingMessageId,
+    type: 'routing',
+    timestamp: new Date(),
+    isStreaming: true,
+    start: primitiveIdFromInput || 'Start',
+    end: '',
+  };
+
+  const currentState = get();
+  set(state => ({
+    ...state,
+    isMainStreaming: currentState.debugMode ? false : true,
+    messages: [...state.messages, routingMessage],
+  }));
+
+  return routingMessageId;
+};
+
+const handleRoutingEnd = (
+  streamChunk: StreamChunk,
+  currentRoutingMessageId: string | null,
+  set: (state: (state: ChatStore) => ChatStore) => void
+): void => {
+  const primitiveId = streamChunk.payload.primitiveId as string | undefined;
+  const selectionReason = streamChunk.payload.selectionReason as
+    | string
+    | undefined;
+  const prompt = streamChunk.payload.prompt as string | undefined;
+
+  if (currentRoutingMessageId) {
+    updateMessageById(
+      currentRoutingMessageId,
+      msg =>
+        ({
+          ...msg,
+          end: primitiveId || 'Finish',
+          selectionReason,
+          prompt,
+          isStreaming: false,
+        }) as RoutingMessage,
+      set
+    );
+    set(state => ({
+      ...state,
+      isMainStreaming: true,
+    }));
+  }
+};
 
 /**
- * Main stream chunk processor that routes to appropriate handlers
+ * Processes a single stream chunk and updates the appropriate message.
+ * Routes the chunk to the correct handler based on its type.
+ *
+ * @param streamChunk - The parsed stream chunk from the SSE response
+ * @param currentTextMessageId - ID of the current text message being built
+ * @param set - Zustand state setter function
+ * @param get - Zustand state getter function
+ * @returns Updated message ID or null if the message sequence is complete
  */
 const processStreamChunk = (
   streamChunk: StreamChunk,
@@ -287,6 +325,13 @@ const processStreamChunk = (
   get: () => ChatStore
 ): string | null => {
   switch (streamChunk.type) {
+    case 'routing-start':
+      return handleRoutingStart(streamChunk, set, get);
+
+    case 'routing-end':
+      handleRoutingEnd(streamChunk, currentTextMessageId, set);
+      return null;
+
     case 'text-start':
       return handleTextStart(streamChunk, set);
 
@@ -309,8 +354,61 @@ const processStreamChunk = (
       return handleToolResult(streamChunk, currentTextMessageId, set, get);
 
     case 'finish':
-      set(state => ({ ...state, isMainStreaming: false }));
+      set(state => ({
+        ...state,
+        isMainStreaming: false,
+        currentToolName: null,
+      }));
       return currentTextMessageId;
+
+    case 'restream-needed': {
+      const restreamMessage: RestreamMessage = {
+        id: generateMessageId('restream'),
+        type: 'restream',
+        timestamp: new Date(),
+        lastEventType: (streamChunk.payload.lastEventType as string) || null,
+        previousLastEventType:
+          (streamChunk.payload.previousLastEventType as string) || null,
+        retryCount: (streamChunk.payload.retryCount as number) || 0,
+      };
+
+      // Set current message isStreaming to false before restreaming
+      if (currentTextMessageId) {
+        updateMessageById(
+          currentTextMessageId,
+          msg => ({ ...msg, isStreaming: false }),
+          set
+        );
+      }
+
+      set(state => ({
+        ...state,
+        isMainStreaming: true,
+        messages: [...state.messages, restreamMessage],
+      }));
+
+      return currentTextMessageId;
+    }
+
+    case 'error': {
+      const currentState = get();
+      const errorMessage: ErrorMessage = {
+        id: generateMessageId('error'),
+        type: 'error',
+        content: 'error', // Not displayed, UI uses t('common.somethingWentWrong')
+        timestamp: new Date(),
+        originalContent: currentState.currentUserMessage || undefined,
+      };
+
+      set(state => ({
+        ...state,
+        messages: [...state.messages, errorMessage],
+        isMainStreaming: false,
+        currentToolName: null,
+      }));
+
+      return null;
+    }
 
     default:
       return currentTextMessageId;
@@ -326,20 +424,22 @@ const createInitialMessage = (content: string): UserMessage => {
   };
 };
 
-const createErrorMessage = (_error: unknown): BotMessage => {
+const createErrorMessage = (
+  error: unknown,
+  originalContent?: string
+): ErrorMessage => {
   return {
     id: generateMessageId('error'),
-    type: 'bot',
+    type: 'error',
     content: 'Something went wrong',
     timestamp: new Date(),
-    isStreaming: false,
+    errorCode: error instanceof Error ? error.name : undefined,
+    originalContent,
   };
 };
 
 type ChatStore = ChatState & ChatActions;
-/**
- * Processes a single SSE data line and updates the store state
- */
+
 const processSSEDataLine = (
   data: string,
   currentTextMessageId: string | null,
@@ -347,7 +447,7 @@ const processSSEDataLine = (
   get: () => ChatStore
 ): string | null => {
   if (data === '[DONE]') {
-    set(state => ({ ...state, isMainStreaming: false }));
+    set(state => ({ ...state, isMainStreaming: false, currentToolName: null }));
     return currentTextMessageId;
   }
 
@@ -365,19 +465,11 @@ const processSSEDataLine = (
     }
 
     return updatedMessageId;
-  } catch (parseError) {
-    // Log the error but don't break the stream - skip malformed chunks
-    logger.warn(
-      { parseError, data: data.substring(0, 100) },
-      'Failed to parse stream chunk, skipping'
-    );
+  } catch {
     return currentTextMessageId;
   }
 };
 
-/**
- * Processes stream lines and updates state accordingly
- */
 const processStreamLines = (
   lines: string[],
   currentTextMessageId: string | null,
@@ -402,13 +494,22 @@ const processStreamLines = (
   return { messageId, shouldBreak: false };
 };
 
+/**
+ * Processes the SSE stream response from the chat API.
+ * Handles incomplete lines, parses chunks, and updates the chat state.
+ *
+ * @param response - The fetch Response object containing the SSE stream
+ * @param _get - Zustand state getter function (prefixed with _ as it's passed to handlers)
+ * @param set - Zustand state setter function
+ * @throws Error if no response body reader is available
+ */
 const processStreamResponse = async (
   response: Response,
   _get: () => ChatStore,
   set: (state: (state: ChatStore) => ChatStore) => void
 ): Promise<void> => {
   let currentTextMessageId: string | null = null;
-  let buffer = ''; // Buffer to accumulate incomplete lines
+  let buffer = '';
 
   const reader = response.body?.getReader();
   if (!reader) throw new Error('No response body reader available');
@@ -445,8 +546,8 @@ const processStreamResponse = async (
     // Ensure reader is properly closed to prevent memory leaks
     try {
       await reader.cancel();
-    } catch (error) {
-      logger.error({ error }, 'Failed to close stream reader');
+    } catch {
+      // Silently handle reader close errors
     }
   }
 };
@@ -454,7 +555,8 @@ const processStreamResponse = async (
 const makeChatRequest = async (
   content: string,
   threadId: string,
-  resourceId: string
+  resourceId: string,
+  signal?: AbortSignal
 ): Promise<Response> => {
   const response = await fetch(withBasePath('/api/chat'), {
     method: 'POST',
@@ -463,8 +565,8 @@ const makeChatRequest = async (
       messages: [{ role: 'user', content }],
       threadId,
       resourceId,
-      agentId: 'mainAgent',
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -487,9 +589,12 @@ export const useChatStore = create<ChatStore>()(
       messages: [],
       isLoading: false,
       isMainStreaming: false,
+      currentToolName: null,
       threadId: '',
       resourceId: '',
       debugMode: false,
+      abortController: null,
+      currentUserMessage: null,
 
       addMessage: (message: MessageTypes) =>
         set(state => ({
@@ -503,38 +608,112 @@ export const useChatStore = create<ChatStore>()(
           ),
         })),
 
-      sendMessage: async (content: string) => {
-        const { threadId, resourceId } = get();
+      sendMessage: async (content: string, skipUserMessage = false) => {
+        const { threadId, resourceId, abortController: oldController } = get();
 
-        // Add initial message
-        const initialMessage = createInitialMessage(content);
+        // Abort any existing request
+        if (oldController) {
+          oldController.abort();
+        }
+
+        // Create new AbortController for this request
+        const controller = new AbortController();
+
+        // Clear originalContent from any error messages (remove retry buttons)
+        // when user sends a new message instead of clicking retry
+        if (!skipUserMessage) {
+          set(state => ({
+            messages: state.messages.map(msg => {
+              if (msg.type === 'error' && msg.originalContent) {
+                return {
+                  ...msg,
+                  originalContent: undefined,
+                };
+              }
+              return msg;
+            }),
+          }));
+
+          const initialMessage = createInitialMessage(content);
+          set(state => ({
+            messages: [...state.messages, initialMessage],
+          }));
+        }
+
         set(state => ({
-          messages: [...state.messages, initialMessage],
+          ...state,
           isLoading: true,
           isMainStreaming: true,
+          abortController: controller,
+          currentUserMessage: content,
         }));
 
         try {
-          const response = await makeChatRequest(content, threadId, resourceId);
+          const response = await makeChatRequest(
+            content,
+            threadId,
+            resourceId,
+            controller.signal
+          );
           await processStreamResponse(response, get, set);
         } catch (error) {
-          logger.error({ error }, 'Chat streaming error');
-          const errorMessage = createErrorMessage(error);
-          set(state => ({
-            ...state,
-            messages: [...state.messages, errorMessage],
-            isMainStreaming: false,
-          }));
+          // Don't show error if request was aborted by user
+          if (error instanceof Error && error.name === 'AbortError') {
+            // User aborted - no error message needed
+          } else {
+            const errorMessage = createErrorMessage(error, content);
+            set(state => ({
+              ...state,
+              messages: [...state.messages, errorMessage],
+              isMainStreaming: false,
+            }));
+          }
         } finally {
           set(state => ({
             ...state,
             isLoading: false,
             isMainStreaming: false,
+            abortController: null,
+            currentUserMessage: null,
           }));
         }
       },
 
-      stopGeneration: () => set({ isLoading: false, isMainStreaming: false }),
+      resendMessage: async (content: string) => {
+        // Mark error message as retried to show badge instead of button
+        set(state => ({
+          messages: state.messages.map(msg => {
+            // Mark the last error message as retried
+            if (
+              msg.type === 'error' &&
+              msg === state.messages[state.messages.length - 1]
+            ) {
+              return {
+                ...msg,
+                isRetried: true,
+              };
+            }
+            return msg;
+          }),
+        }));
+
+        // Use sendMessage with skipUserMessage=true to avoid duplicate user message
+        await get().sendMessage(content, true);
+      },
+
+      stopGeneration: () => {
+        const { abortController } = get();
+        if (abortController) {
+          abortController.abort();
+        }
+        set({
+          isLoading: false,
+          isMainStreaming: false,
+          currentToolName: null,
+          abortController: null,
+          currentUserMessage: null,
+        });
+      },
 
       clearMessages: () => set({ messages: [] }),
 

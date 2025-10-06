@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useLanguage } from '@/contexts/language-context';
 import { UI_CONFIG } from '@/lib/config';
 
 interface ChatInputProps {
@@ -36,6 +37,7 @@ const ChatInputComponent = ({
   placeholder = 'Type your message...',
   maxLength = UI_CONFIG.MESSAGE_INPUT_MAX_LENGTH,
 }: ChatInputProps) => {
+  const { t } = useLanguage();
   const [message, setMessage] = useState('');
   const isComposingRef = useRef(false);
 
@@ -145,7 +147,7 @@ const ChatInputComponent = ({
                 <Square className="w-4 h-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Stop generation</TooltipContent>
+            <TooltipContent>{t('chat.stopGeneration')}</TooltipContent>
           </Tooltip>
         ) : (
           <Tooltip>
@@ -160,16 +162,16 @@ const ChatInputComponent = ({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              Send message (Enter)
+              {t('chat.sendMessage')}
               <br />
-              New line (Shift + Enter)
+              {t('chat.newLine')}
             </TooltipContent>
           </Tooltip>
         )}
       </div>
 
       <div className="text-xs text-muted-foreground text-center mt-2 max-w-4xl mx-auto">
-        Press Enter to send, Shift + Enter for new line
+        {t('chat.sendInstructions')}
       </div>
     </>
   );

@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { useLanguage } from '@/contexts/language-context';
 import type { ToolCallMessage } from '@/types/chat';
 
 import { Badge } from '../ui/badge';
@@ -41,6 +42,7 @@ function JsonDisplay({ data }: JsonDisplayProps) {
  * Tool display component for rendering tool calls, arguments, and results
  */
 export function ToolDisplay({ message }: ToolDisplayProps) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
 
   const hasContent = message.args || message.result;
@@ -51,7 +53,7 @@ export function ToolDisplay({ message }: ToolDisplayProps) {
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="icon" className="size-8">
             <ChevronsUpDown />
-            <span className="sr-only">Toggle</span>
+            <span className="sr-only">{t('tool.toggle')}</span>
           </Button>
         </CollapsibleTrigger>
         <div className="flex items-center gap-2">
@@ -83,7 +85,7 @@ export function ToolDisplay({ message }: ToolDisplayProps) {
             {/* Tool Arguments */}
             {message.args && (
               <div>
-                <h5 className="text-xs mb-2">Tool Arguments</h5>
+                <h5 className="text-xs mb-2">{t('tool.arguments')}</h5>
                 <JsonDisplay data={message.args} />
               </div>
             )}
@@ -91,7 +93,7 @@ export function ToolDisplay({ message }: ToolDisplayProps) {
             {/* Tool Result */}
             {message.result && (
               <div>
-                <h5 className="text-xs mb-2">Tool Result</h5>
+                <h5 className="text-xs mb-2">{t('tool.result')}</h5>
                 <JsonDisplay data={message.result} />
               </div>
             )}

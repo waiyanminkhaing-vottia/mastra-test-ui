@@ -14,11 +14,6 @@ export interface BotMessage extends Message {
   isStreaming: boolean;
 }
 
-export interface ContinueMessage extends Message {
-  type: 'continue';
-  content: string;
-}
-
 export interface ToolCallMessage extends Message {
   type: 'tool';
   name: string;
@@ -27,11 +22,37 @@ export interface ToolCallMessage extends Message {
   status: 'start' | 'toolCalling' | 'complete' | 'error';
 }
 
+export interface RoutingMessage extends Message {
+  type: 'routing';
+  isStreaming: boolean;
+  start: string;
+  end: string;
+  selectionReason?: string;
+  prompt?: string;
+}
+
+export interface ErrorMessage extends Message {
+  type: 'error';
+  content: string;
+  errorCode?: string;
+  originalContent?: string; // Store the original user message that failed
+  isRetried?: boolean; // Flag to show retried badge instead of button
+}
+
+export interface RestreamMessage extends Message {
+  type: 'restream';
+  lastEventType: string | null;
+  previousLastEventType: string | null;
+  retryCount: number;
+}
+
 export type MessageTypes =
   | UserMessage
   | BotMessage
-  | ContinueMessage
-  | ToolCallMessage;
+  | ToolCallMessage
+  | RoutingMessage
+  | ErrorMessage
+  | RestreamMessage;
 
 export interface StreamChunk {
   type:
@@ -40,6 +61,10 @@ export interface StreamChunk {
     | 'text-end'
     | 'tool-call'
     | 'tool-result'
+    | 'routing-start'
+    | 'routing-end'
+    | 'agent-start'
+    | 'agent-end'
     | 'finish'
     | 'error'
     | string;
@@ -50,6 +75,10 @@ export interface StreamChunk {
     args?: Record<string, unknown>;
     result?: Record<string, unknown>;
     error?: string;
+    agentId?: string;
+    primitiveId?: string;
+    selectionReason?: string;
+    [key: string]: unknown;
   };
 }
 
@@ -80,10 +109,19 @@ export const isToolCallMessage = (
 };
 
 /**
- * Type guard to check if a message is a continue message
+ * Type guard to check if a message is a routing message
  */
-export const isContinueMessage = (
+export const isRoutingMessage = (
   message: MessageTypes
-): message is ContinueMessage => {
-  return message.type === 'continue';
+): message is RoutingMessage => {
+  return message.type === 'routing';
+};
+
+/**
+ * Type guard to check if a message is an error message
+ */
+export const isErrorMessage = (
+  message: MessageTypes
+): message is ErrorMessage => {
+  return message.type === 'error';
 };

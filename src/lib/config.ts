@@ -28,6 +28,10 @@ export const UI_CONFIG = {
   MESSAGE_INPUT_MAX_LENGTH: 10000,
   MESSAGE_INPUT_MAX_HEIGHT: 200, // pixels
   MESSAGE_LENGTH_WARNING_THRESHOLD: 0.8, // 80% of max
+
+  // Animation timings
+  THINKING_DOT_ANIMATION_DURATION: '0.6s',
+  THINKING_DOT_DELAYS: ['0ms', '0.2s', '0.4s'] as const,
 } as const;
 
 /**
