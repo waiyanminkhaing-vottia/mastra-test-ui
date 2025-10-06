@@ -88,6 +88,11 @@ async function streamAgentResponse(
     let previousLastEventType: string | null = null;
     let lastEventType: string | null = null;
 
+    logger.info(
+      { retryCount, threadId, resourceId, messageCount: messages.length },
+      'Starting stream'
+    );
+
     const response = await agent.stream({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: messages as any,
@@ -101,9 +106,14 @@ async function streamAgentResponse(
         : {}),
     });
 
+    let chunkCount = 0;
     await response.processDataStream({
       onChunk: async (chunk: unknown) => {
-        if (!chunk || typeof chunk !== 'object') return;
+        chunkCount++;
+        if (!chunk || typeof chunk !== 'object') {
+          logger.debug({ chunk, chunkCount }, 'Received invalid chunk');
+          return;
+        }
 
         const clientEvent = useNetworkMapper
           ? mapNetworkEventToClientEvent(chunk)
@@ -114,6 +124,10 @@ async function streamAgentResponse(
           if (eventObj.type) {
             previousLastEventType = lastEventType;
             lastEventType = eventObj.type;
+            logger.debug(
+              { eventType: eventObj.type, previousLastEventType, chunkCount },
+              'Received event'
+            );
           }
 
           // Don't send error events to client during streaming
@@ -131,9 +145,21 @@ async function streamAgentResponse(
             const data = `data: ${JSON.stringify(clientEvent)}\n\n`;
             controller.enqueue(new TextEncoder().encode(data));
           }
+        } else {
+          logger.debug({ chunk }, 'Client event is null after mapping');
         }
       },
     });
+
+    logger.info(
+      {
+        chunkCount,
+        lastEventType,
+        previousLastEventType,
+        retryCount,
+      },
+      'Stream completed'
+    );
 
     // Check if we need to restream
     // lastEventType should be 'step-finish', but we check if previousLastEventType was 'text-end'
