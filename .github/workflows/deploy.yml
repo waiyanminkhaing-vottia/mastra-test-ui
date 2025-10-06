@@ -11,14 +11,14 @@ on:
         options:
           - development
           - production
-      service:
-        description: 'Service to deploy'
+      tenant:
+        description: 'Tenant to deploy'
         required: true
         default: 'default'
         type: choice
         options:
           - default
-          - fasthelp
+          - wai
 
 jobs:
   deploy:
@@ -78,10 +78,10 @@ jobs:
 
           # Clone/update repository with authentication
           BRANCH="${{ github.ref_name }}"
-          SERVICE="${{ github.event.inputs.service }}"
+          TENANT="${{ github.event.inputs.tenant }}"
 
           echo "Deploying from branch: $BRANCH"
-          echo "Service: $SERVICE"
+          echo "Tenant: $TENANT"
 
           # Configure git with token authentication
           echo "Configuring git authentication..."
@@ -134,12 +134,12 @@ jobs:
             ls -la .env*
           fi
 
-          # Set port and URLs based on service
-          if [ "$SERVICE" = "fasthelp" ]; then
-            PORT=3002
-            MASTRA_SERVER_URL="http://mastra-test-ui-fasthelp:4002"
+          # Set port and URLs based on tenant
+          if [ "$TENANT" = "wai" ]; then
+            PORT=3501
+            MASTRA_SERVER_URL="http://mastra-test-ui-wai:4002"
           else
-            PORT=3001
+            PORT=3500
             MASTRA_SERVER_URL="http://mastra-test-ui:4001"
           fi
 
@@ -190,17 +190,17 @@ jobs:
           # Rename environment-specific file to .env for build
           mv ".env.$ENV_FILE" .env
 
-          # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on service
-          if [ "$SERVICE" = "fasthelp" ]; then
-            BASE_PATH="/fasthelp"
-            MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
+          # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on tenant
+          if [ "$TENANT" = "wai" ]; then
+            BASE_PATH="/wai"
+            MASTRA_SERVER_URL="http://mastra-test-ui-wai:4002"
           else
             BASE_PATH=""
-            MASTRA_SERVER_URL="http://mastra-test:4001"
+            MASTRA_SERVER_URL="http://mastra-test-ui:4001"
           fi
 
           # Update NEXT_PUBLIC_BASE_PATH in .env file
-          echo "🔍 Setting NEXT_PUBLIC_BASE_PATH='$BASE_PATH' for service: $SERVICE"
+          echo "🔍 Setting NEXT_PUBLIC_BASE_PATH='$BASE_PATH' for tenant: $TENANT"
           if grep -q "^NEXT_PUBLIC_BASE_PATH=" .env; then
             # Replace existing NEXT_PUBLIC_BASE_PATH
             sed -i "s|^NEXT_PUBLIC_BASE_PATH=.*|NEXT_PUBLIC_BASE_PATH=$BASE_PATH|" .env
@@ -210,7 +210,7 @@ jobs:
           fi
 
           # Update MASTRA_SERVER_URL in .env file
-          echo "🔍 Setting MASTRA_SERVER_URL='$MASTRA_SERVER_URL' for service: $SERVICE"
+          echo "🔍 Setting MASTRA_SERVER_URL='$MASTRA_SERVER_URL' for tenant: $TENANT"
           if grep -q "^MASTRA_SERVER_URL=" .env; then
             # Replace existing MASTRA_SERVER_URL
             sed -i "s|^MASTRA_SERVER_URL=.*|MASTRA_SERVER_URL=$MASTRA_SERVER_URL|" .env
@@ -238,7 +238,7 @@ jobs:
           sudo docker build \
             --build-arg PORT=$PORT \
             --secret id=github_token,src=/tmp/github_token \
-            -t mastra-test-ui:$ENV_FILE-$SERVICE-latest \
+            -t mastra-test-ui:$ENV_FILE-$TENANT-latest \
             .
 
           # Configure Docker to allow insecure registry
@@ -253,13 +253,13 @@ jobs:
           sleep 10
 
           # Tag image for registry
-          sudo docker tag mastra-test-ui:$ENV_FILE-$SERVICE-latest $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
+          sudo docker tag mastra-test-ui:$ENV_FILE-$TENANT-latest $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
 
           # Push to local registry
-          sudo docker push $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
+          sudo docker push $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
           rm -f /tmp/github_token
 
-          echo "✅ Image built and pushed: localhost:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest"
+          echo "✅ Image built and pushed: localhost:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest"
           SCRIPT_EOF
 
           # Copy script to remote and execute
@@ -275,20 +275,20 @@ jobs:
             # Ensure Docker network exists
             sudo docker network create mastra-test-network --driver bridge 2>/dev/null || true
 
-            # Set service and port
-            SERVICE="${{ github.event.inputs.service }}"
+            # Set tenant and port
+            TENANT="${{ github.event.inputs.tenant }}"
             ENV_FILE="${{ github.event.inputs.environment }}"
 
-            # Set port and container name based on service
-            if [ "$SERVICE" = "fasthelp" ]; then
-              PORT=3002
-              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            # Set port and container name based on tenant
+            if [ "$TENANT" = "wai" ]; then
+              PORT=3501
+              CONTAINER_NAME="mastra-test-ui-wai"
             else
-              PORT=3001
+              PORT=3500
               CONTAINER_NAME="mastra-test-ui"
             fi
 
-            echo "Service: $SERVICE"
+            echo "Tenant: $TENANT"
             echo "Port: $PORT"
             echo "Container name: $CONTAINER_NAME"
             echo "Deploying with environment: $ENV_FILE"
@@ -320,7 +320,7 @@ jobs:
               -p $PORT:$PORT \
               -e PORT=$PORT \
               --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
-              $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$SERVICE-latest
+              $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
 
             # Debug: Check safe environment variables in running container
             echo "🔍 Safe environment variables in container:"
@@ -337,20 +337,20 @@ jobs:
           ssh ${{ env.LIGHTSAIL_USER }}@${{ env.LIGHTSAIL_HOST }} << 'EOF'
             echo "🔍 Verifying deployment..."
 
-            # Set service and port
-            SERVICE="${{ github.event.inputs.service }}"
+            # Set tenant and port
+            TENANT="${{ github.event.inputs.tenant }}"
             ENV_FILE="${{ github.event.inputs.environment }}"
 
-            # Set port and container name based on service
-            if [ "$SERVICE" = "fasthelp" ]; then
-              PORT=3002
-              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            # Set port and container name based on tenant
+            if [ "$TENANT" = "wai" ]; then
+              PORT=3501
+              CONTAINER_NAME="mastra-test-ui-wai"
             else
-              PORT=3001
+              PORT=3500
               CONTAINER_NAME="mastra-test-ui"
             fi
 
-            echo "Verifying service: $SERVICE on port: $PORT"
+            echo "Verifying tenant: $TENANT on port: $PORT"
 
             echo "Checking container status..."
             sudo docker ps | grep $CONTAINER_NAME
