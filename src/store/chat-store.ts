@@ -7,11 +7,11 @@ import {
   generateResourceId,
   generateThreadId,
 } from '@/lib/chat-utils';
-import { logger } from '@/lib/logger';
 import type {
   BotMessage,
   ErrorMessage,
   MessageTypes,
+  RestreamMessage,
   RoutingMessage,
   StreamChunk,
   ToolCallMessage,
@@ -27,12 +27,14 @@ interface ChatState {
   resourceId: string;
   debugMode: boolean;
   abortController: AbortController | null;
+  currentUserMessage: string | null; // Store the current user message for error handling
 }
 
 interface ChatActions {
   addMessage: (message: MessageTypes) => void;
   updateMessage: (id: string, updateMessage: MessageTypes) => void;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, skipUserMessage?: boolean) => Promise<void>;
+  resendMessage: (content: string) => Promise<void>;
   stopGeneration: () => void;
   clearMessages: () => void;
   initializeSession: () => void;
@@ -359,6 +361,55 @@ const processStreamChunk = (
       }));
       return currentTextMessageId;
 
+    case 'restream-needed': {
+      const restreamMessage: RestreamMessage = {
+        id: generateMessageId('restream'),
+        type: 'restream',
+        timestamp: new Date(),
+        lastEventType: (streamChunk.payload.lastEventType as string) || null,
+        previousLastEventType:
+          (streamChunk.payload.previousLastEventType as string) || null,
+        retryCount: (streamChunk.payload.retryCount as number) || 0,
+      };
+
+      // Set current message isStreaming to false before restreaming
+      if (currentTextMessageId) {
+        updateMessageById(
+          currentTextMessageId,
+          msg => ({ ...msg, isStreaming: false }),
+          set
+        );
+      }
+
+      set(state => ({
+        ...state,
+        isMainStreaming: true,
+        messages: [...state.messages, restreamMessage],
+      }));
+
+      return currentTextMessageId;
+    }
+
+    case 'error': {
+      const currentState = get();
+      const errorMessage: ErrorMessage = {
+        id: generateMessageId('error'),
+        type: 'error',
+        content: 'error', // Not displayed, UI uses t('common.somethingWentWrong')
+        timestamp: new Date(),
+        originalContent: currentState.currentUserMessage || undefined,
+      };
+
+      set(state => ({
+        ...state,
+        messages: [...state.messages, errorMessage],
+        isMainStreaming: false,
+        currentToolName: null,
+      }));
+
+      return null;
+    }
+
     default:
       return currentTextMessageId;
   }
@@ -373,17 +424,17 @@ const createInitialMessage = (content: string): UserMessage => {
   };
 };
 
-const createErrorMessage = (error: unknown): ErrorMessage => {
-  // Extract error message for logging while showing generic message to user
-  const errorDetails = error instanceof Error ? error.message : String(error);
-  logger.error({ error, errorDetails }, 'Creating error message');
-
+const createErrorMessage = (
+  error: unknown,
+  originalContent?: string
+): ErrorMessage => {
   return {
     id: generateMessageId('error'),
     type: 'error',
     content: 'Something went wrong',
     timestamp: new Date(),
     errorCode: error instanceof Error ? error.name : undefined,
+    originalContent,
   };
 };
 
@@ -415,10 +466,6 @@ const processSSEDataLine = (
 
     return updatedMessageId;
   } catch (parseError) {
-    logger.warn(
-      { parseError, data: data.substring(0, 100) },
-      'Failed to parse stream chunk, skipping'
-    );
     return currentTextMessageId;
   }
 };
@@ -500,7 +547,7 @@ const processStreamResponse = async (
     try {
       await reader.cancel();
     } catch (error) {
-      logger.error({ error }, 'Failed to close stream reader');
+      // Silently handle reader close errors
     }
   }
 };
@@ -547,6 +594,7 @@ export const useChatStore = create<ChatStore>()(
       resourceId: '',
       debugMode: false,
       abortController: null,
+      currentUserMessage: null,
 
       addMessage: (message: MessageTypes) =>
         set(state => ({
@@ -560,7 +608,7 @@ export const useChatStore = create<ChatStore>()(
           ),
         })),
 
-      sendMessage: async (content: string) => {
+      sendMessage: async (content: string, skipUserMessage = false) => {
         const { threadId, resourceId, abortController: oldController } = get();
 
         // Abort any existing request
@@ -571,13 +619,33 @@ export const useChatStore = create<ChatStore>()(
         // Create new AbortController for this request
         const controller = new AbortController();
 
-        // Add initial message
-        const initialMessage = createInitialMessage(content);
+        // Clear originalContent from any error messages (remove retry buttons)
+        // when user sends a new message instead of clicking retry
+        if (!skipUserMessage) {
+          set(state => ({
+            messages: state.messages.map(msg => {
+              if (msg.type === 'error' && msg.originalContent) {
+                return {
+                  ...msg,
+                  originalContent: undefined,
+                };
+              }
+              return msg;
+            }),
+          }));
+
+          const initialMessage = createInitialMessage(content);
+          set(state => ({
+            messages: [...state.messages, initialMessage],
+          }));
+        }
+
         set(state => ({
-          messages: [...state.messages, initialMessage],
+          ...state,
           isLoading: true,
           isMainStreaming: true,
           abortController: controller,
+          currentUserMessage: content,
         }));
 
         try {
@@ -591,10 +659,9 @@ export const useChatStore = create<ChatStore>()(
         } catch (error) {
           // Don't show error if request was aborted by user
           if (error instanceof Error && error.name === 'AbortError') {
-            logger.info('Chat request aborted by user');
+            // User aborted - no error message needed
           } else {
-            logger.error({ error }, 'Chat streaming error');
-            const errorMessage = createErrorMessage(error);
+            const errorMessage = createErrorMessage(error, content);
             set(state => ({
               ...state,
               messages: [...state.messages, errorMessage],
@@ -607,8 +674,31 @@ export const useChatStore = create<ChatStore>()(
             isLoading: false,
             isMainStreaming: false,
             abortController: null,
+            currentUserMessage: null,
           }));
         }
+      },
+
+      resendMessage: async (content: string) => {
+        // Mark error message as retried to show badge instead of button
+        set(state => ({
+          messages: state.messages.map(msg => {
+            // Mark the last error message as retried
+            if (
+              msg.type === 'error' &&
+              msg === state.messages[state.messages.length - 1]
+            ) {
+              return {
+                ...msg,
+                isRetried: true,
+              };
+            }
+            return msg;
+          }),
+        }));
+
+        // Use sendMessage with skipUserMessage=true to avoid duplicate user message
+        await get().sendMessage(content, true);
       },
 
       stopGeneration: () => {
@@ -621,6 +711,7 @@ export const useChatStore = create<ChatStore>()(
           isMainStreaming: false,
           currentToolName: null,
           abortController: null,
+          currentUserMessage: null,
         });
       },
 

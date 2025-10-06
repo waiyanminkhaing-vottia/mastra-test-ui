@@ -7,6 +7,7 @@
     "callingTool": "呼び出し中",
     "error": "エラー",
     "retry": "再試行",
+    "retried": "再試行済み",
     "newChat": "新しいチャット",
     "selectAgent": "エージェントを選択",
     "welcome": "修理受付AIエージェントです。",
@@ -19,6 +20,7 @@
     "skipToInput": "メッセージ入力へスキップ"
   },
   "toolActions": {
+    "thinking": "考え中",
     "get": "検索中",
     "fetch": "取得中",
     "retrieve": "取得中",
@@ -26,9 +28,11 @@
     "find": "検索中",
     "list": "一覧表示中",
     "read": "読み込み中",
+    "lookup": "検索中",
     "create": "作成中",
     "add": "追加中",
     "insert": "挿入中",
+    "generate": "作成中",
     "update": "更新中",
     "edit": "編集中",
     "modify": "変更中",
@@ -65,6 +69,12 @@
   "routing": {
     "prompt": "プロンプト",
     "selectionReason": "選択理由"
+  },
+  "restream": {
+    "restreaming": "再ストリーミング",
+    "attempt": "試行",
+    "previous": "前回",
+    "last": "最後"
   },
   "common": {
     "loading": "読み込み中...",

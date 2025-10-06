@@ -35,6 +35,15 @@ export interface ErrorMessage extends Message {
   type: 'error';
   content: string;
   errorCode?: string;
+  originalContent?: string; // Store the original user message that failed
+  isRetried?: boolean; // Flag to show retried badge instead of button
+}
+
+export interface RestreamMessage extends Message {
+  type: 'restream';
+  lastEventType: string | null;
+  previousLastEventType: string | null;
+  retryCount: number;
 }
 
 export type MessageTypes =
@@ -42,7 +51,8 @@ export type MessageTypes =
   | BotMessage
   | ToolCallMessage
   | RoutingMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | RestreamMessage;
 
 export interface StreamChunk {
   type:
