@@ -137,10 +137,10 @@ jobs:
           # Set port and URLs based on tenant
           if [ "$TENANT" = "wai" ]; then
             PORT=3501
-            MASTRA_SERVER_URL="http://mastra-test-ui-wai:4002"
+            MASTRA_SERVER_URL="http://mastra-test-wai:4002"
           else
             PORT=3500
-            MASTRA_SERVER_URL="http://mastra-test-ui:4001"
+            MASTRA_SERVER_URL="http://mastra-test:4001"
           fi
 
           # Copy environment file to deployment location
@@ -193,10 +193,10 @@ jobs:
           # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on tenant
           if [ "$TENANT" = "wai" ]; then
             BASE_PATH="/wai"
-            MASTRA_SERVER_URL="http://mastra-test-ui-wai:4002"
+            MASTRA_SERVER_URL="http://mastra-test-wai:4002"
           else
             BASE_PATH=""
-            MASTRA_SERVER_URL="http://mastra-test-ui:4001"
+            MASTRA_SERVER_URL="http://mastra-test:4001"
           fi
 
           # Update NEXT_PUBLIC_BASE_PATH in .env file
