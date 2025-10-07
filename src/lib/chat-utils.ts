@@ -35,7 +35,11 @@ export const extractToolAction = (toolName: string): string => {
   const normalized = toolName.toLowerCase();
 
   // Special cases - tools that should show as "thinking" instead of action
-  const thinkingTools = ['updateworkingmemory', 'workingmemory'];
+  const thinkingTools = [
+    'updateworkingmemory',
+    'workingmemory',
+    'get_current_time',
+  ];
   if (thinkingTools.some(tool => normalized.includes(tool))) {
     return 'thinking';
   }
