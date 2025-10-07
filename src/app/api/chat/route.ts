@@ -85,6 +85,7 @@ async function streamAgentResponse(
   let finalPreviousLastEventType: string | null = null;
 
   while (retryCount < maxRetries) {
+    let secondPreviousLastEventType: string | null = null;
     let previousLastEventType: string | null = null;
     let lastEventType: string | null = null;
 
@@ -122,10 +123,16 @@ async function streamAgentResponse(
         if (clientEvent) {
           const eventObj = clientEvent as { type?: string };
           if (eventObj.type) {
+            secondPreviousLastEventType = previousLastEventType;
             previousLastEventType = lastEventType;
             lastEventType = eventObj.type;
             logger.debug(
-              { eventType: eventObj.type, previousLastEventType, chunkCount },
+              {
+                eventType: eventObj.type,
+                previousLastEventType,
+                secondPreviousLastEventType,
+                chunkCount,
+              },
               'Received event'
             );
           }
@@ -156,6 +163,7 @@ async function streamAgentResponse(
         chunkCount,
         lastEventType,
         previousLastEventType,
+        secondPreviousLastEventType,
         retryCount,
       },
       'Stream completed'
@@ -181,18 +189,37 @@ async function streamAgentResponse(
     }
 
     // Check if we need to restream
-    // lastEventType should be 'step-finish', but we check if previousLastEventType was 'text-end'
-    if (previousLastEventType !== 'text-end') {
+    // Case 1: lastEvent is 'step-finish' and previousLastEventType is not 'text-end'
+    // Case 2: lastEvent is 'finish', previousLastEventType is 'step-finish' and secondPreviousLastEventType is not 'text-end'
+    const shouldRestream =
+      (lastEventType === 'step-finish' &&
+        previousLastEventType !== 'text-end') ||
+      (lastEventType === 'finish' &&
+        previousLastEventType === 'step-finish' &&
+        secondPreviousLastEventType !== 'text-end');
+
+    if (shouldRestream) {
       finalPreviousLastEventType = previousLastEventType;
       retryCount++;
       logger.warn(
-        { lastEventType, previousLastEventType, retryCount, maxRetries },
-        'Stream ended without text-end before finish, restreaming'
+        {
+          lastEventType,
+          previousLastEventType,
+          secondPreviousLastEventType,
+          retryCount,
+          maxRetries,
+        },
+        'Stream ended without text-end, restreaming'
       );
 
       const restreamData = `data: ${JSON.stringify({
         type: 'restream-needed',
-        payload: { lastEventType, previousLastEventType, retryCount },
+        payload: {
+          lastEventType,
+          previousLastEventType,
+          secondPreviousLastEventType,
+          retryCount,
+        },
       })}\n\n`;
       controller.enqueue(new TextEncoder().encode(restreamData));
 
