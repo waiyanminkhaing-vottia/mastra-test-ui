@@ -74,8 +74,8 @@ jobs:
           fi
           echo "✅ Using git: $GIT_CMD"
 
-          # Clean up old mastra-test-ui images (keep latest 3)
-          sudo docker images localhost:5000/mastra-test-ui --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi || true
+          # Clean up old mastra-test-ui images for this tenant (keep latest 3)
+          sudo docker images localhost:5000/mastra-test-ui-$TENANT --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi || true
 
           # Clone/update repository with authentication
           BRANCH="${{ github.ref_name }}"
@@ -245,7 +245,7 @@ jobs:
           sudo docker build \
             --build-arg PORT=$PORT \
             --secret id=github_token,src=/tmp/github_token \
-            -t mastra-test-ui:$ENV_FILE-$TENANT-latest \
+            -t mastra-test-ui-$TENANT:$ENV_FILE-latest \
             .
 
           # Configure Docker to allow insecure registry
@@ -260,13 +260,13 @@ jobs:
           sleep 10
 
           # Tag image for registry
-          sudo docker tag mastra-test-ui:$ENV_FILE-$TENANT-latest $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
+          sudo docker tag mastra-test-ui-$TENANT:$ENV_FILE-latest $REGISTRY_IP:5000/mastra-test-ui-$TENANT:$ENV_FILE-latest
 
           # Push to local registry
-          sudo docker push $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
+          sudo docker push $REGISTRY_IP:5000/mastra-test-ui-$TENANT:$ENV_FILE-latest
           rm -f /tmp/github_token
 
-          echo "✅ Image built and pushed: localhost:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest"
+          echo "✅ Image built and pushed: localhost:5000/mastra-test-ui-$TENANT:$ENV_FILE-latest"
           SCRIPT_EOF
 
           # Copy script to remote and execute
@@ -330,14 +330,14 @@ jobs:
               -p $PORT:$PORT \
               -e PORT=$PORT \
               --env-file "/opt/mastra-test-ui/.env.$ENV_FILE" \
-              $REGISTRY_IP:5000/mastra-test-ui:$ENV_FILE-$TENANT-latest
+              $REGISTRY_IP:5000/mastra-test-ui-$TENANT:$ENV_FILE-latest
 
             # Debug: Check safe environment variables in running container
             echo "🔍 Safe environment variables in container:"
             sudo docker exec $CONTAINER_NAME env | grep -E "^(LOG_LEVEL|NEXT_PUBLIC_|NODE_ENV|ENABLE_|PORT)" | sort || echo "No safe env vars found"
 
-            # Clean up old images (keep running container image)
-            sudo docker images "*mastra-test-ui*" --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +3 | awk '{print $1}' | xargs -r sudo docker rmi || true
+            # Clean up old images for this tenant (keep running container image)
+            sudo docker images "*mastra-test-ui-$TENANT*" --format "{{.ID}} {{.CreatedAt}}" | sort -k2 -r | tail -n +3 | awk '{print $1}' | xargs -r sudo docker rmi || true
 
             echo "✅ Application deployed successfully"
           EOF
