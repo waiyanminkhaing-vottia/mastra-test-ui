@@ -135,16 +135,19 @@ jobs:
             ls -la .env*
           fi
 
-          # Set port and URLs based on tenant
+          # Set port, URLs, and base path based on tenant
           if [ "$TENANT" = "fasthelp" ]; then
             PORT=3501
             MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
+            BASE_PATH="/fasthelp"
           elif [ "$TENANT" = "tsuzumi" ]; then
             PORT=3502
             MASTRA_SERVER_URL="http://mastra-test-tsuzumi:4003"
+            BASE_PATH="/tsuzumi"
           else
             PORT=3500
             MASTRA_SERVER_URL="http://mastra-test:4001"
+            BASE_PATH=""
           fi
 
           # Copy environment file to deployment location
