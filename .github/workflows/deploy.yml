@@ -18,7 +18,8 @@ on:
         type: choice
         options:
           - default
-          - wai
+          - fasthelp
+          - tsuzumi
 
 jobs:
   deploy:
@@ -135,9 +136,12 @@ jobs:
           fi
 
           # Set port and URLs based on tenant
-          if [ "$TENANT" = "wai" ]; then
+          if [ "$TENANT" = "fasthelp" ]; then
             PORT=3501
-            MASTRA_SERVER_URL="http://mastra-test-wai:4002"
+            MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
+          elif [ "$TENANT" = "tsuzumi" ]; then
+            PORT=3502
+            MASTRA_SERVER_URL="http://mastra-test-tsuzumi:4003"
           else
             PORT=3500
             MASTRA_SERVER_URL="http://mastra-test:4001"
@@ -191,9 +195,12 @@ jobs:
           mv ".env.$ENV_FILE" .env
 
           # Set NEXT_PUBLIC_BASE_PATH and MASTRA_SERVER_URL based on tenant
-          if [ "$TENANT" = "wai" ]; then
-            BASE_PATH="/wai"
-            MASTRA_SERVER_URL="http://mastra-test-wai:4002"
+          if [ "$TENANT" = "fasthelp" ]; then
+            BASE_PATH="/fasthelp"
+            MASTRA_SERVER_URL="http://mastra-test-fasthelp:4002"
+          elif [ "$TENANT" = "tsuzumi" ]; then
+            BASE_PATH="/tsuzumi"
+            MASTRA_SERVER_URL="http://mastra-test-tsuzumi:4003"
           else
             BASE_PATH=""
             MASTRA_SERVER_URL="http://mastra-test:4001"
@@ -280,9 +287,12 @@ jobs:
             ENV_FILE="${{ github.event.inputs.environment }}"
 
             # Set port and container name based on tenant
-            if [ "$TENANT" = "wai" ]; then
+            if [ "$TENANT" = "fasthelp" ]; then
               PORT=3501
-              CONTAINER_NAME="mastra-test-ui-wai"
+              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            elif [ "$TENANT" = "tsuzumi" ]; then
+              PORT=3502
+              CONTAINER_NAME="mastra-test-ui-tsuzumi"
             else
               PORT=3500
               CONTAINER_NAME="mastra-test-ui"
@@ -342,9 +352,12 @@ jobs:
             ENV_FILE="${{ github.event.inputs.environment }}"
 
             # Set port and container name based on tenant
-            if [ "$TENANT" = "wai" ]; then
+            if [ "$TENANT" = "fasthelp" ]; then
               PORT=3501
-              CONTAINER_NAME="mastra-test-ui-wai"
+              CONTAINER_NAME="mastra-test-ui-fasthelp"
+            elif [ "$TENANT" = "tsuzumi" ]; then
+              PORT=3502
+              CONTAINER_NAME="mastra-test-ui-tsuzumi"
             else
               PORT=3500
               CONTAINER_NAME="mastra-test-ui"
