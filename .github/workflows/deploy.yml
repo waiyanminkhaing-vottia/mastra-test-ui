@@ -158,12 +158,20 @@ jobs:
             echo "MASTRA_SERVER_URL=$MASTRA_SERVER_URL" | sudo tee -a "/opt/mastra-test-ui/.env.$ENV_FILE"
           fi
 
+          # Update NEXT_PUBLIC_BASE_PATH in the runtime env file
+          if sudo grep -q "^NEXT_PUBLIC_BASE_PATH=" "/opt/mastra-test-ui/.env.$ENV_FILE"; then
+            sudo sed -i "s|^NEXT_PUBLIC_BASE_PATH=.*|NEXT_PUBLIC_BASE_PATH=$BASE_PATH|" "/opt/mastra-test-ui/.env.$ENV_FILE"
+          else
+            echo "NEXT_PUBLIC_BASE_PATH=$BASE_PATH" | sudo tee -a "/opt/mastra-test-ui/.env.$ENV_FILE"
+          fi
+
           # Verify copied file (without exposing contents)
           echo "🔍 Verifying copied file:"
           if [ -f "/opt/mastra-test-ui/.env.$ENV_FILE" ]; then
             echo "✅ Environment file copied successfully"
             echo "📄 File size: $(sudo wc -l < "/opt/mastra-test-ui/.env.$ENV_FILE") lines"
             echo "🔍 MASTRA_SERVER_URL: $(sudo grep "^MASTRA_SERVER_URL=" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "not set")"
+            echo "🔍 NEXT_PUBLIC_BASE_PATH: $(sudo grep "^NEXT_PUBLIC_BASE_PATH=" "/opt/mastra-test-ui/.env.$ENV_FILE" || echo "not set")"
           else
             echo "❌ Failed to copy environment file"
             exit 1
