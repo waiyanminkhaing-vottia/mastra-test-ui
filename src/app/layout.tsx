@@ -23,9 +23,9 @@ const geistMono = Geist_Mono({
  * Tenant name mapping
  */
 const TENANT_NAMES: Record<string, { en: string; ja: string }> = {
-  fasthelp: { en: 'FastHelp', ja: 'ファストヘルプ' },
-  tsuzumi: { en: 'Tsuzumi', ja: 'つづみ' },
-  default: { en: 'Vottia', ja: 'ボッティア' },
+  fasthelp: { en: 'FastHelp', ja: 'FastHelp' },
+  tsuzumi: { en: 'Tsuzumi', ja: 'Tsuzumi' },
+  default: { en: 'vottia', ja: 'vottia' },
 };
 
 /**
@@ -33,7 +33,7 @@ const TENANT_NAMES: Record<string, { en: string; ja: string }> = {
  */
 function getTenantTitle(): string {
   const tenantId = ENV_CONFIG.TENANT_ID || 'default';
-  return TENANT_NAMES[tenantId]?.en || 'Vottia';
+  return TENANT_NAMES[tenantId]?.en || 'vottia';
 }
 
 /**
