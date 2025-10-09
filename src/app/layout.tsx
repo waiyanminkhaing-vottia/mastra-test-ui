@@ -7,6 +7,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { HtmlLangWrapper } from '@/components/html-lang-wrapper';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LanguageProvider } from '@/contexts/language-context';
+import { ENV_CONFIG } from '@/lib/config';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -19,11 +20,28 @@ const geistMono = Geist_Mono({
 });
 
 /**
+ * Tenant name mapping
+ */
+const TENANT_NAMES: Record<string, { en: string; ja: string }> = {
+  fasthelp: { en: 'FastHelp', ja: 'ファストヘルプ' },
+  tsuzumi: { en: 'Tsuzumi', ja: 'つづみ' },
+  default: { en: 'Vottia', ja: 'ボッティア' },
+};
+
+/**
+ * Get tenant-specific title
+ */
+function getTenantTitle(): string {
+  const tenantId = ENV_CONFIG.TENANT_ID || 'default';
+  return TENANT_NAMES[tenantId]?.en || 'Vottia';
+}
+
+/**
  * Metadata configuration for the Mastra UI application.
  */
 export const metadata: Metadata = {
-  title: 'vottia',
-  description: 'Chat with vottia AI Assistant',
+  title: getTenantTitle(),
+  description: `Chat with ${getTenantTitle()} AI Assistant`,
 };
 
 /**
