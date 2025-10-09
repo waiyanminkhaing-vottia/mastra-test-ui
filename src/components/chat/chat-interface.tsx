@@ -15,7 +15,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { withBasePath } from '@/lib/base-path';
 import { extractToolAction } from '@/lib/chat-utils';
 import { UI_CONFIG } from '@/lib/config';
-import { getBrandImage } from '@/lib/tenant';
+import { getBrandImage, getBrandImageFallback } from '@/lib/tenant';
 import { useChatStore } from '@/store/chat-store';
 
 import { ChatInput } from './chat-input';
@@ -40,6 +40,9 @@ export function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const hasUserScrolledUp = useRef(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [brandImageSrc, setBrandImageSrc] = useState(
+    withBasePath(getBrandImage())
+  );
 
   const scrollToBottom = useCallback(() => {
     if (bottomRef.current) {
@@ -199,12 +202,16 @@ export function ChatInterface() {
               >
                 <div className="text-center space-y-5">
                   <Image
-                    src={withBasePath(getBrandImage())}
+                    src={brandImageSrc}
                     alt="Vottia AI Assistant Logo"
                     width="150"
                     height="30"
                     priority
                     className="w-auto h-16"
+                    onError={() => {
+                      // Fallback to default brand image if tenant-specific image fails to load
+                      setBrandImageSrc(withBasePath(getBrandImageFallback()));
+                    }}
                   />
                   <p id="welcome-heading" className="text-sm">
                     {t('chat.welcome')}
