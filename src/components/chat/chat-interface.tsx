@@ -15,6 +15,7 @@ import { useLanguage } from '@/contexts/language-context';
 import { withBasePath } from '@/lib/base-path';
 import { extractToolAction } from '@/lib/chat-utils';
 import { UI_CONFIG } from '@/lib/config';
+import { getBrandImage } from '@/lib/tenant';
 import { useChatStore } from '@/store/chat-store';
 
 import { ChatInput } from './chat-input';
@@ -198,7 +199,7 @@ export function ChatInterface() {
               >
                 <div className="text-center space-y-5">
                   <Image
-                    src={withBasePath('/brand.png')}
+                    src={withBasePath(getBrandImage())}
                     alt="Vottia AI Assistant Logo"
                     width="150"
                     height="30"

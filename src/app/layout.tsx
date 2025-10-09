@@ -7,6 +7,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { HtmlLangWrapper } from '@/components/html-lang-wrapper';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LanguageProvider } from '@/contexts/language-context';
+import { getFavicon } from '@/lib/tenant';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
   title: 'vottia',
   description: 'Chat with vottia AI Assistant',
   icons: {
-    icon: '/favicon.svg',
+    icon: getFavicon(),
   },
 };
 
