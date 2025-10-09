@@ -36,6 +36,23 @@ RUN corepack enable pnpm
 # NODE_ENV should always be production for optimized builds
 ENV NODE_ENV=production
 
+# Copy tenant-specific favicon before build
+# Read NEXT_PUBLIC_TENANT_ID from .env file and copy appropriate favicon
+RUN set -a; \
+    if [ -f .env ]; then \
+      . ./.env; \
+    fi; \
+    set +a; \
+    if [ -n "$NEXT_PUBLIC_TENANT_ID" ] && [ -f "public/favicon-${NEXT_PUBLIC_TENANT_ID}.svg" ]; then \
+      echo "✅ Using tenant favicon: favicon-${NEXT_PUBLIC_TENANT_ID}.svg"; \
+      cp "public/favicon-${NEXT_PUBLIC_TENANT_ID}.svg" src/app/icon.svg; \
+    elif [ -f "public/favicon.svg" ]; then \
+      echo "✅ Using default favicon: favicon.svg"; \
+      cp public/favicon.svg src/app/icon.svg; \
+    else \
+      echo "⚠️ No favicon found, keeping existing src/app/icon.svg"; \
+    fi
+
 # Build the application with env vars from .env file
 # Load .env and export variables before building
 RUN set -a; \

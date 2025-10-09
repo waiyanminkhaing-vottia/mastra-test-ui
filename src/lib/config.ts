@@ -54,5 +54,5 @@ export const ENV_CONFIG = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   MASTRA_SERVER_URL: process.env.MASTRA_SERVER_URL || 'http://localhost:4000',
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '',
-  TENANT_ID: process.env.TENANT_ID || '',
+  TENANT_ID: process.env.NEXT_PUBLIC_TENANT_ID || '',
 } as const;

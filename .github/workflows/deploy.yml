@@ -237,6 +237,20 @@ jobs:
             echo "MASTRA_SERVER_URL=$MASTRA_SERVER_URL" >> .env
           fi
 
+          # Update NEXT_PUBLIC_TENANT_ID in .env file
+          if [ "$TENANT" != "default" ]; then
+            echo "🔍 Setting NEXT_PUBLIC_TENANT_ID='$TENANT'"
+            if grep -q "^NEXT_PUBLIC_TENANT_ID=" .env; then
+              sed -i "s|^NEXT_PUBLIC_TENANT_ID=.*|NEXT_PUBLIC_TENANT_ID=$TENANT|" .env
+            else
+              echo "NEXT_PUBLIC_TENANT_ID=$TENANT" >> .env
+            fi
+          else
+            # Remove NEXT_PUBLIC_TENANT_ID for default tenant
+            echo "🔍 Removing NEXT_PUBLIC_TENANT_ID for default tenant"
+            sed -i "/^NEXT_PUBLIC_TENANT_ID=/d" .env
+          fi
+
           # Verify build environment file
           echo "🔍 Build environment file verified:"
           if [ -f ".env" ]; then
